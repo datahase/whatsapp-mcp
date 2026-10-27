@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build --webpack && node scripts/licenses.mjs && node scripts/export.mjs",
+    "build": "node scripts/brand.mjs && next build --webpack && node scripts/licenses.mjs && node scripts/export.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

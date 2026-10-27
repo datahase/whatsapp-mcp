@@ -1,10 +1,65 @@
 # Operating whatsapp-mcp
 
-Everyday management commands work from any folder after
-[installing the host command](#management-from-any-folder). Initial setup,
-configuration changes and the backup/upgrade examples use the deployment
-directory containing `compose.yaml`. The default project name is `whatsapp-mcp`
-(volume `whatsapp-mcp_whatsapp-mcp-data`).
+Run `whatsapp-mcp setup` from any folder to deploy the published Docker image.
+Normal management commands also work from any folder. Manual Compose commands
+below use the configuration directory printed by setup. The default project
+name is `whatsapp-mcp` (volume `whatsapp-mcp_whatsapp-mcp-data`).
+
+## One-command setup
+
+Install the CLI and start the setup wizard:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/install-cli.sh | sudo sh -s -- /usr/local --setup
+```
+
+Docker with Compose v2 must already be installed and accessible to the invoking
+user. A system-wide installation uses sudo only to install the executable;
+setup runs as the invoking user. Tailscale modes also require Tailscale installed
+and signed in on the host, with sudo available for network configuration.
+
+| Option | Purpose |
+| --- | --- |
+| `--mode local` | Bind locally; static-token MCP access |
+| `--mode tailscale` | Private Tailscale Serve HTTPS and OAuth |
+| `--mode funnel` | Public Tailscale Funnel HTTPS and OAuth |
+| `--mode https --url https://HOST` | Configure OAuth for an existing HTTPS proxy; does not create the proxy |
+| `--dir PATH` | Settings directory; default `$XDG_DATA_HOME/whatsapp-mcp` or `$HOME/.local/share/whatsapp-mcp` |
+| `--port NUMBER` | Docker host port; default 8765 |
+| `--https-port NUMBER` | Tailscale port: 443 (default), 8443 or 10000 |
+| `--env-file PATH` | Import advanced environment settings on first setup |
+| `--image REFERENCE` | Image tag or digest; defaults to this CLI release on a fresh install |
+| `--project NAME` | Separate Compose project; also choose a different directory and port |
+| `--yes` | Skip interactive prompts; fresh default is local access |
+| `--no-pull` | Use an image already present locally |
+
+Keep the imported `.env` private. See [`.env.example`](../.env.example) for AI
+provider keys, quotas and other supported settings. Setup never executes the
+file as shell code. Credentials are generated when absent; settings files are
+written with private permissions. Do not put secrets in command arguments.
+
+Setup downloads a versioned Compose file, pulls the image, validates the app
+configuration, waits for health, and prints an admin sign-in code. It refuses
+to replace a Tailscale route already using the selected HTTPS port. Funnel is
+enabled only after the OAuth-enabled application is healthy.
+
+Rerun `whatsapp-mcp setup --yes` to reapply settings. Existing Compose deployments
+are found by project labels, including stopped containers. Their original
+configuration directory, `.env`, network settings and data volume are reused.
+Without a container, pass `--dir` to reuse a nondefault settings directory.
+Existing `.env` files are backed up under `backups/setup-TIMESTAMP-PID/`.
+To change advanced settings, edit that deployment's `.env` and rerun setup.
+`--env-file` imports are only allowed for fresh installations.
+
+Changing an existing access mode or proxy port requires an explicit `.env` and
+proxy change; setup does not rewrite existing routes. On failed configuration
+validation, the running container is left alone and its previous `.env` is
+restored. On failed startup, setup attempts to restore the previous image and
+settings. Data is retained, but database migrations are not undone. Always
+make a data backup before a version upgrade. If interrupted, inspect the
+configuration directory's `.setup-lock` before removing that stale lock and
+retrying. Network-policy or Tailscale approval failures require correction on
+the host before retrying.
 
 ## Start, stop, logs, status
 
@@ -174,8 +229,7 @@ Install the host command once from the downloaded project:
 sudo sh scripts/install-cli.sh /usr/local
 ```
 
-After these installer files are published on GitHub, installation without a
-checkout is also supported:
+For installation without a checkout:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/install-cli.sh | sudo sh -s -- /usr/local
@@ -183,12 +237,10 @@ curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/
 
 The piped installer downloads the host CLI over HTTPS. It checks the script
 marker and shell syntax before replacing the executable. Download or validation
-failure leaves an existing installation unchanged. The URL above requires both
-installer files to exist at that GitHub ref; local development alone does not
-make the URL available. For a pinned installation, use the chosen commit in
+failure leaves an existing installation unchanged. For a pinned installation, use the chosen commit in
 the installer URL and pass `WHATSAPP_MCP_REF` with that same commit to `sh`.
-This command installs only the host CLI; Docker and the application container
-must be set up separately.
+Omitting `--setup` installs only the CLI. Add `--setup` to deploy the server
+using the [setup wizard](#one-command-setup). Docker must already be installed.
 
 It copies a standalone script to `/usr/local/bin/whatsapp-mcp`. It uses Docker
 service labels to find the existing container, including stopped containers.
@@ -215,7 +267,7 @@ If multiple instances exist, the command asks you to choose one. Use
 `whatsapp-mcp --container NAME login` or set `WHATSAPP_MCP_CONTAINER`. Non-Compose
 containers also work with an explicit name. It never chooses the first match.
 
-Initial provisioning, rebuilding and configuration changes still use Compose
-from its deployment folder. The normal management commands above need no folder
-change. An uninstall removes only the installed script; it does not stop the
+`whatsapp-mcp setup` provisions and reapplies published-image deployments.
+Source builds and the manual backup examples use Compose from the configuration
+directory. The normal management commands above need no folder change. An uninstall removes only the installed script; it does not stop the
 container or remove data.

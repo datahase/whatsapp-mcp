@@ -18,7 +18,6 @@ import {
   KeyRound,
   Loader2,
   LogOut,
-  MessageSquare,
   Monitor,
   Plus,
   RefreshCw,
@@ -109,8 +108,13 @@ async function request<T>(
 function Brand() {
   return (
     <div className="brand">
-      <span className="brandmark">
-        <MessageSquare size={18} strokeWidth={1.8} />
+      <span className="brandmark" aria-hidden="true">
+        <img
+          src="/admin/brand/whatsapp-mcp-logo-transparent.png"
+          alt=""
+          width={40}
+          height={40}
+        />
       </span>
       <span>WhatsApp MCP</span>
     </div>

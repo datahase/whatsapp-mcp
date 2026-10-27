@@ -1,6 +1,8 @@
 # Access from another computer
 
-For HTTPS through Tailscale, follow the README's
+For a fresh deployment, run `whatsapp-mcp setup --mode tailscale --yes` for
+private HTTPS, or `--mode funnel` for public HTTPS with OAuth. Install and sign
+in to Tailscale on the Docker host first. See the README's
 [Serve and Funnel walkthrough](../README.md#remote-access-with-tailscale).
 Use Serve for private tailnet access, or Funnel with OAuth for cloud-backed
 ChatGPT/Claude connectors. The direct network-binding option below is useful

@@ -49,5 +49,6 @@ cover.out
 /web/node_modules/
 /web/.next/
 /web/out/
+/web/public/brand/
 /web/tsconfig.tsbuildinfo
 /internal/httpapi/static/*

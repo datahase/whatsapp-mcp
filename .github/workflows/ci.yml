@@ -75,5 +75,7 @@ jobs:
         run: docker buildx build --platform ${{ matrix.platform }} --build-arg VERSION=ci --build-arg REVISION=${{ github.sha }} -t whatsapp-mcp:ci --load .
       - name: Container acceptance
         run: bash scripts/container-smoke.sh whatsapp-mcp:ci ${{ matrix.platform }}
+      - name: One-command setup and rollback
+        run: python3 scripts/setup-smoke.py whatsapp-mcp:ci
       - name: Image size
         run: docker image ls whatsapp-mcp:ci

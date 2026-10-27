@@ -129,6 +129,168 @@ out.write_text(pathlib.Path(os.environ['CLI_TEST_SOURCE']).read_text() if mode==
         self.assertIn('Invalid CLI', result.stderr)
         self.assertFalse((prefix / 'bin/whatsapp-mcp').exists())
 
+    def setup_tools(self):
+        shim = '''#!/usr/bin/env python3
+import os,sys,json,pathlib
+name=pathlib.Path(sys.argv[0]).name;args=sys.argv[1:]
+with open(os.environ['CLI_TEST_CALLS'],'a') as f:f.write(json.dumps({'tool':name,'args':args})+'\\n')
+fail=os.environ.get('CLI_TEST_SETUP_FAIL','')
+if name=='id':print('0');sys.exit(0)
+if name=='curl':
+ if fail=='download':sys.exit(22)
+ source=os.environ['CLI_TEST_SOURCE'] if any(x.endswith('/scripts/whatsapp-mcp') for x in args) else os.environ['CLI_TEST_COMPOSE_SOURCE']
+ pathlib.Path(args[args.index('--output')+1]).write_bytes(pathlib.Path(source).read_bytes());sys.exit(0)
+if name=='tailscale':
+ if args[:2]==['ip','-4']:
+  if fail=='tailscale':sys.exit(1)
+  print('100.64.0.1')
+ elif args[:3]==['serve','status','--json']:print(os.environ.get('CLI_TEST_TS_CONFIG','{}'))
+ elif '--bg' in args:print('Available:\\nhttps://setup-example.tailnet.ts.net/\\n')
+ sys.exit(0)
+if name=='docker':
+ if args[:2]==['ps','-aq']:print(os.environ.get('CLI_TEST_SETUP_IDS','existing123' if os.environ.get('CLI_TEST_EXISTING_DIR') else ''),end='')
+ elif args[0]=='inspect':print(os.environ.get('CLI_TEST_EXISTING_DIR',''))
+ elif args[0]=='pull' and fail=='pull':sys.exit(1)
+ elif args[0]=='compose':
+  if 'run' in args and fail=='config':sys.exit(1)
+  if 'up' in args and fail=='startup':sys.exit(1)
+  if 'exec' in args:print('Sign-in code: SYNTHETIC-ONLY')
+'''
+        for name in ['docker', 'curl', 'tailscale', 'id']:
+            tool = self.bin / name
+            tool.write_text(shim)
+            tool.chmod(0o755)
+        self.env['CLI_TEST_COMPOSE_SOURCE'] = str(SCRIPTS.parent / 'compose.yaml')
+        self.env['CLI_TEST_SOURCE'] = str(SCRIPTS / 'whatsapp-mcp')
+        self.env.pop('SUDO_USER', None)
+        return self.root / 'deployment'
+
+    def setup_run(self, directory, *args):
+        return self.cli('setup', '--dir', str(directory), '--yes', *args)
+
+    def env_values(self, directory):
+        return dict(line.split('=', 1) for line in (directory / '.env').read_text().splitlines() if line and not line.startswith('#'))
+
+    def test_setup_fresh_local(self):
+        directory = self.setup_tools()
+        result = self.setup_run(directory, '--mode', 'local')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = self.env_values(directory)
+        self.assertEqual(len(values['WHATSAPP_MCP_TOKEN']), 64)
+        self.assertNotEqual(values['WHATSAPP_MCP_TOKEN'], values['WHATSAPP_MCP_ADMIN_PASSWORD'])
+        self.assertNotIn(values['WHATSAPP_MCP_TOKEN'], result.stdout)
+        self.assertEqual((directory / '.env').stat().st_mode & 0o777, 0o600)
+        self.assertEqual(values['BIND_IP'], '127.0.0.1')
+        self.assertEqual(values['AI_ENABLED'], 'false')
+        self.assertIn('http://127.0.0.1:8765/admin', result.stdout)
+        self.assertTrue(any(x['tool']=='docker' and '--wait' in x['args'] and '--no-build' in x['args'] for x in self.recorded()))
+        self.assertFalse((directory / '.setup-lock').exists())
+
+    def test_setup_imports_advanced_env(self):
+        directory = self.setup_tools()
+        settings = self.root / 'advanced.env'
+        settings.write_text('AI_ENABLED=true\nAI_API_KEY=synthetic-provider-key\nAI_DAILY_REQUESTS=20\n')
+        result = self.setup_run(directory, '--env-file', str(settings))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env_values(directory)['AI_API_KEY'], 'synthetic-provider-key')
+        self.assertEqual(self.env_values(directory)['AI_ENABLED'], 'true')
+        self.assertNotIn('synthetic-provider-key', result.stdout + result.stderr)
+
+    def test_setup_adopts_existing_project_and_preserves_settings(self):
+        directory = self.setup_tools()
+        self.assertEqual(self.setup_run(directory, '--mode', 'local').returncode, 0)
+        original = self.env_values(directory)
+        self.env['CLI_TEST_EXISTING_DIR'] = str(directory)
+        result = self.cli('setup', '--yes', '--mode', 'local')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env_values(directory), original)
+        self.assertTrue(list((directory / 'backups').glob('setup-*/.env')))
+
+    def test_setup_rejects_other_existing_project_directory(self):
+        directory = self.setup_tools()
+        original = self.root / 'original'
+        original.mkdir();(original / '.env').write_text('WHATSAPP_MCP_TOKEN=keep-this-original-secret\n')
+        self.env['CLI_TEST_EXISTING_DIR'] = str(original)
+        directory.mkdir();(directory / '.env').write_text('OTHER=true\n')
+        result = self.setup_run(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('different directory', result.stderr)
+        self.assertEqual((original / '.env').read_text(), 'WHATSAPP_MCP_TOKEN=keep-this-original-secret\n')
+
+    def test_setup_config_failure_restores_existing_env(self):
+        directory = self.setup_tools()
+        self.assertEqual(self.setup_run(directory).returncode, 0)
+        before = (directory / '.env').read_bytes()
+        self.calls.write_text('');self.env['CLI_TEST_SETUP_FAIL'] = 'config'
+        result = self.setup_run(directory, '--image', 'example/changed:1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((directory / '.env').read_bytes(), before)
+        self.assertFalse(any(x['tool']=='docker' and 'up' in x['args'] for x in self.recorded()))
+
+    def test_setup_rejects_occupied_tailscale_port(self):
+        directory = self.setup_tools()
+        self.env['CLI_TEST_TS_CONFIG'] = '{"TCP":{"443":{"HTTPS":true}}}'
+        result = self.setup_run(directory, '--mode', 'funnel')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('already uses HTTPS port', result.stderr)
+        self.assertFalse(any(x['tool']=='tailscale' and ('--bg' in x['args'] or x['args'][0]=='funnel') for x in self.recorded()))
+
+    def test_setup_public_funnel_only_after_oauth_container_ready(self):
+        directory = self.setup_tools()
+        result = self.setup_run(directory, '--mode', 'funnel')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = self.env_values(directory)
+        self.assertEqual(values['WHATSAPP_MCP_OAUTH_ONLY'], 'true')
+        self.assertEqual(values['WHATSAPP_MCP_PUBLIC_URL'], 'https://setup-example.tailnet.ts.net')
+        events = self.recorded()
+        up = next(i for i,x in enumerate(events) if x['tool']=='docker' and 'up' in x['args'])
+        public = next(i for i,x in enumerate(events) if x['tool']=='tailscale' and x['args'][0]=='funnel')
+        self.assertLess(up, public)
+        before_up = [x for x in events[:up] if x['tool']=='tailscale' and '--bg' in x['args']]
+        self.assertTrue(all(x['args'][-1].startswith('text:') for x in before_up))
+
+    def test_setup_failed_startup_never_enables_funnel(self):
+        directory = self.setup_tools();self.env['CLI_TEST_SETUP_FAIL'] = 'startup'
+        result = self.setup_run(directory, '--mode', 'funnel')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(x['tool']=='tailscale' and x['args'][0]=='funnel' for x in self.recorded()))
+        self.assertTrue(any(x['tool']=='tailscale' and x['args'][-1]=='off' for x in self.recorded()))
+
+    def test_setup_download_failure_leaves_no_credentials_or_container(self):
+        directory = self.setup_tools();self.env['CLI_TEST_SETUP_FAIL'] = 'download'
+        result = self.setup_run(directory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((directory / '.env').exists())
+        self.assertFalse(any(x['tool']=='docker' and 'up' in x['args'] for x in self.recorded()))
+
+    def test_setup_custom_proxy_requires_origin(self):
+        directory = self.setup_tools()
+        bad = self.setup_run(directory, '--mode', 'https', '--url', 'https://example.com/mcp')
+        self.assertNotEqual(bad.returncode, 0)
+        good = self.setup_run(directory, '--mode', 'https', '--url', 'https://example.com')
+        self.assertEqual(good.returncode, 0, good.stderr)
+        self.assertEqual(self.env_values(directory)['WHATSAPP_MCP_PUBLIC_URL'], 'https://example.com')
+
+    def test_installer_can_launch_setup_without_checkout(self):
+        directory = self.setup_tools()
+        result = subprocess.run(['sh', '-s', '--', str(self.root / 'installed'), '--setup', '--dir', str(directory), '--yes'], input=(SCRIPTS / 'install-cli.sh').read_text(), cwd='/', env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((directory / '.env').exists())
+
+
+    def test_installer_setup_returns_to_invoking_user(self):
+        directory = self.setup_tools()
+        sudo = self.bin / 'sudo'
+        sudo.write_text("#!/usr/bin/env python3\nimport os,json,sys\nwith open(os.environ['CLI_TEST_CALLS'],'a') as f:f.write(json.dumps({'tool':'sudo','args':sys.argv[1:]})+'\\n')\n")
+        sudo.chmod(0o755)
+        self.env['SUDO_USER'] = 'setup-owner'
+        prefix = self.root / 'system install'
+        result = subprocess.run(['sh', str(SCRIPTS / 'install-cli.sh'), str(prefix), '--setup', '--dir', str(directory), '--yes'], env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        event = next(x for x in self.recorded() if x['tool']=='sudo')
+        self.assertEqual(event['args'][:3], ['-H', '-u', 'setup-owner'])
+        self.assertEqual(event['args'][3:5], [str(prefix / 'bin/whatsapp-mcp'), 'setup'])
+
 
 if __name__ == '__main__':
     unittest.main()

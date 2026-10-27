@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -239,6 +240,10 @@ func runLoginCode(args []string) int {
 		port = "8765"
 	}
 	fmt.Printf("Sign-in code: %s  (works once, expires in %d minutes)\n", code, int(httpapi.LoginCodeTTL.Minutes()))
-	fmt.Printf("Or open:      http://%s:%s/admin/login?code=%s\n", host, port, code)
+	if cfg.PublicURL != "" {
+		fmt.Printf("Or open:      %s/admin/login?code=%s\n", strings.TrimRight(cfg.PublicURL, "/"), code)
+	} else {
+		fmt.Printf("Or open:      http://%s:%s/admin/login?code=%s\n", host, port, code)
+	}
 	return 0
 }

@@ -4,6 +4,10 @@ export const metadata: Metadata = {
   title: "WhatsApp MCP",
   description: "Manage your WhatsApp connections.",
   robots: { index: false, follow: false },
+  icons: {
+    icon: "/admin/brand/whatsapp-mcp-icon.png",
+    apple: "/admin/brand/whatsapp-mcp-icon.png",
+  },
 };
 export default function RootLayout({
   children,

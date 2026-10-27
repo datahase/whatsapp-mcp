@@ -5,6 +5,11 @@
 !cmd/
 !internal/
 !web/
+!assets/
+assets/**
+!assets/brand/
+!assets/brand/whatsapp-mcp-icon.png
+!assets/brand/whatsapp-mcp-logo-transparent.png
 !LICENSE
 !NOTICE
 !LICENSE-UPSTREAM-MIT
@@ -24,5 +29,6 @@ data/
 web/node_modules/
 web/.next/
 web/out/
+web/public/brand/
 web/*.tsbuildinfo
 internal/httpapi/static/

@@ -5,6 +5,24 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
+### Added
+- One-command Docker deployment with `whatsapp-mcp setup` and installer `--setup`.
+- Interactive or unattended local, private Tailscale, public Funnel and existing
+  HTTPS proxy setup, plus advanced environment-file import.
+- Existing-deployment discovery, protected credential generation, configuration
+  checks, health-gated startup and previous-image recovery after startup failure.
+- Native container CI checks for fresh setup, reruns and failed-update recovery.
+
+### Fixed
+- Admin sign-in codes show the configured HTTPS origin for remote deployments.
+- Serve embedded brand images without requiring an admin session.
+
+### Changed
+- Use the supplied MCP logo in the login page, navigation, browser icons and README.
+- Copy approved brand masters during the frontend build, preserving transparency.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

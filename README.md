@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/whatsapp-mcp-icon.png" alt="WhatsApp MCP logo" width="128" height="128">
+</p>
+
 # WhatsApp MCP
 
 Connect your personal WhatsApp accounts to an AI assistant. Read and search
@@ -18,68 +22,83 @@ Run the commands below on the computer that will host the Docker container.
 Linux and macOS are supported; Windows requires WSL and Docker Desktop and has
 not been tested. No Go or Node.js installation is needed for the server.
 
-### 1. Install the CLI
+### 1. Install and start
 
-Run from any folder:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/install-cli.sh | sudo sh -s -- /usr/local
-```
-
-This installs `whatsapp-mcp`, the command for managing your Docker container.
-It downloads the CLI without requiring a project checkout. Docker and the
-server are set up in the next step.
-
-Already have a running server? Skip to [Sign in](#3-sign-in).
-For installation without `sudo`, see the [CLI installation options](docs/OPERATIONS.md#management-from-any-folder).
-
-### 2. Start the server
-
-Download the deployment files and start the published image:
+Run from any folder on the Docker host:
 
 ```sh
-mkdir -p whatsapp-mcp/scripts
-cd whatsapp-mcp
-curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/compose.yaml -o compose.yaml
-curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/.env.example -o .env.example
-curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/scripts/init-env.sh -o scripts/init-env.sh
-sh scripts/init-env.sh
-docker compose pull
-docker compose up -d --no-build
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/install-cli.sh | sudo sh -s -- /usr/local --setup
 ```
 
-These are configuration files and a setup helper; no source checkout or local
-image build is required. The setup script creates a private `.env` file with
-random credentials. Keep that file and the persistent Docker data volume.
-See [Docker Hub images](#docker-hub-images) for registry and version choices.
+The installer adds the CLI, then opens a setup wizard as your user. Choose how
+you want to connect:
 
-Check startup:
+| Choice | Access | Suitable clients |
+| --- | --- | --- |
+| Local | This computer only | Local MCP clients |
+| Private Tailscale | HTTPS within your tailnet | Codex CLI/Desktop, Claude Code, local bridges |
+| Public Funnel | Public HTTPS with OAuth | ChatGPT and Claude remote connectors, plus local clients |
+| Existing HTTPS proxy | Your own HTTPS origin, with OAuth | Clients that can reach that origin |
+
+For Tailscale modes, install Tailscale on the Docker host and sign in first.
+Private access also requires Tailscale on your client device. Funnel requires
+permission in your tailnet policy; complete any Tailscale approval prompts.
+Docker and Compose must already be installed, running, and accessible to your
+user (`docker ps` must work). The installer does not install Docker.
+
+Setup downloads the published image and Compose configuration, generates
+credentials, waits for a healthy container, and prints an admin URL and a
+one-time sign-in code. No source checkout or local image build is required.
+The container runs in the background and restarts with Docker.
+
+### 2. Choose settings, if needed
+
+The wizard works with the piped install command. For unattended installation,
+append setup options, for example:
 
 ```sh
-whatsapp-mcp status
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/main/scripts/install-cli.sh | sudo sh -s -- /usr/local --setup --mode funnel --yes
 ```
 
-Wait for `healthy`. The container runs in the background and restarts with
-Docker. You can close the terminal. Everyday CLI commands work from any folder
-on this Docker host; initial setup and configuration changes use the deployment
-folder containing `compose.yaml`.
+If the CLI is already installed:
+
+```sh
+whatsapp-mcp setup --mode local --yes
+# Or choose private HTTPS:
+whatsapp-mcp setup --mode tailscale --yes
+# Or use a proxy you already operate:
+whatsapp-mcp setup --mode https --url https://whatsapp.example.com --yes
+```
+
+Choose one mode on first setup. Use `--port 8766` for another host port,
+`--https-port 8443` if Tailscale already uses port 443, or `--dir /path/to/settings`
+for a different configuration directory. Import AI and other advanced settings
+with `--env-file /path/to/private.env`. Keep secrets in that file, not command
+arguments. See [all setup options](docs/OPERATIONS.md#one-command-setup).
+
+Settings default to `$HOME/.local/share/whatsapp-mcp` (or
+`$XDG_DATA_HOME/whatsapp-mcp`). Keep its private `.env` file and the persistent
+Docker data volume. Existing deployments are discovered and reused. Rerunning
+`whatsapp-mcp setup --yes` keeps their credentials and network configuration.
+The CLI reports the configuration directory it uses.
+
+To install only the CLI, omit `--setup` from the curl command. For installation
+without `sudo`, see [CLI installation options](docs/OPERATIONS.md#management-from-any-folder).
 
 ### 3. Sign in
 
-Generate a one-time code on the server:
+Open the admin URL printed by setup and enter its one-time code. It works once
+and expires after 10 minutes. Generate another code at any time:
 
 ```sh
 whatsapp-mcp login
 ```
 
-Open **[http://127.0.0.1:8765/admin](http://127.0.0.1:8765/admin)**, enter the
-code, and click **Sign in**. The code works once and expires after 10 minutes.
-Run the command again for a new code. The admin password in `.env` also works.
-
-If Docker runs on another computer, use that server's address in your browser.
-For Tailscale, follow [remote access below](#remote-access-with-tailscale).
-Other network setups are covered in the [remote access guide](docs/REMOTE_ACCESS.md);
-`127.0.0.1` refers to the computer where the browser is running.
+For local mode, the admin URL is
+**[http://127.0.0.1:8765/admin](http://127.0.0.1:8765/admin)**.
+Tailscale and HTTPS modes print your configured HTTPS address. Run the CLI on
+the Docker host; open the URL in the browser on the device that has access.
+The admin password in `.env` also works.
 
 ### 4. Link your WhatsApp account
 
@@ -131,26 +150,24 @@ docker pull datahase/whatsapp-mcp:latest
 For a fixed release, or to pull from GHCR instead:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.3.0
-docker pull ghcr.io/datahase/whatsapp-mcp:0.3.0
+docker pull datahase/whatsapp-mcp:0.4.0
+docker pull ghcr.io/datahase/whatsapp-mcp:0.4.0
 ```
 
-Both registries publish `0.3.0`, `0.3`, and `latest`, with `linux/amd64` and
+Both registries publish `0.4.0`, `0.4`, and `latest`, with `linux/amd64` and
 `linux/arm64` variants. Docker selects the variant for your host. To pin the
 image or use GHCR, set one of these in `.env`:
 
 ```sh
-WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.3.0
-# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.3.0
+WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.4.0
+# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.4.0
 ```
 
-Pulling an image downloads it. The [startup steps above](#2-start-the-server)
-provide configuration and persistent storage. After changing the image setting,
-apply it from the deployment folder:
+Pulling an image downloads it. `whatsapp-mcp setup` provides configuration and persistent storage.
+To deploy a specific image from any folder:
 
 ```sh
-docker compose pull
-docker compose up -d --no-build
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.4.0 --yes
 ```
 
 To build from source instead, clone this repository, run
@@ -168,43 +185,24 @@ the same tailnet.
 | Tailscale Serve | Admin page, local Codex/Claude Code, or a Claude Desktop bridge | Permitted devices in your tailnet |
 | Tailscale Funnel | ChatGPT and Claude cloud-backed remote connectors | Public internet, with app login and OAuth still required |
 
-On a Linux Docker host, start private HTTPS access:
+The setup wizard configures Tailscale for you on a fresh deployment:
 
 ```sh
-sudo tailscale serve --bg --https=443 http://127.0.0.1:8765
+whatsapp-mcp setup --mode tailscale --yes
+# For public remote connectors, choose this instead:
+whatsapp-mcp setup --mode funnel --yes
 ```
 
-Copy the `https://…ts.net` URL printed by Tailscale. In the deployment folder,
-edit `.env`, replacing the example below with that exact URL:
+Both modes set the HTTPS origin and OAuth-only API access. Setup leaves an
+existing Tailscale route alone; use another `--https-port` if necessary. Public
+Funnel is enabled only after the application is healthy. Keep the default
+`BIND_IP=127.0.0.1`; Tailscale forwards to Docker locally.
 
-```sh
-WHATSAPP_MCP_PUBLIC_URL=https://your-server.your-tailnet.ts.net
-WHATSAPP_MCP_OAUTH_ONLY=true
-```
-
-Apply the settings from that folder:
-
-```sh
-docker compose up -d
-```
-
-Keep the default `BIND_IP=127.0.0.1`: Tailscale forwards to Docker locally.
-If you changed the bind address or host port, use that address and port in
-the Serve/Funnel target instead.
-Open `/admin` on your HTTPS URL and use the same URL with `/mcp` in your client.
-Run `whatsapp-mcp login` on the server to generate the admin sign-in code.
-
-For **ChatGPT or Claude remote connectors**, enable public Funnel access after
-configuring OAuth:
-
-```sh
-sudo tailscale funnel --bg --https=443 http://127.0.0.1:8765
-```
-
-Complete any Tailscale HTTPS/policy approval prompts. Funnel uses the same
-`ts.net` hostname, so a custom domain is unnecessary. It makes the forwarded
-service public, including the admin sign-in page. Admin login and OAuth remain
-required. The cloud provider does not need to join your tailnet.
+Funnel uses your `ts.net` hostname, so a custom domain is unnecessary. It makes
+the forwarded service public, including the admin sign-in page. Admin login
+and OAuth remain required. The cloud provider does not need to join your tailnet.
+For an existing deployment, keep its network settings or follow the
+[manual network configuration guide](docs/OAUTH.md#server-setup).
 
 Check access with `tailscale serve status` or `tailscale funnel status`. Public
 DNS can take time to appear; verify the endpoint from outside your tailnet if
@@ -218,6 +216,7 @@ Run these on the Docker host from any folder:
 
 | Command | What it does |
 | --- | --- |
+| `whatsapp-mcp setup` | Deploy or reapply the server configuration |
 | `whatsapp-mcp login` | Generate an admin sign-in code |
 | `whatsapp-mcp status` | Show container state and health |
 | `whatsapp-mcp logs` | Show the last 50 log lines |
@@ -240,16 +239,17 @@ Use paid provider access for personal media. Analysis runs only when requested.
 ## Updates and backups
 
 Follow the [backup and update guide](docs/OPERATIONS.md) before upgrading.
-From your deployment folder, pull and start the configured image:
+From any folder, choose the new release image:
 
 ```sh
-docker compose pull
-docker compose up -d --no-build
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.4.0 --yes
 ```
 
-If you pinned `WHATSAPP_MCP_IMAGE` to a version, change it to the new release
-first. Source-based installations use `git pull --ff-only` and
-`docker compose up -d --build` instead.
+Setup backs up the existing `.env`, validates configuration, and waits for
+health. It attempts to restore the previous image and settings if startup
+fails. Back up the data volume before upgrades; startup rollback does not
+undo database migrations. Source-based installations use `git pull --ff-only`
+and `docker compose up -d --build` instead.
 
 Re-run the curl installation command to update the host CLI. Docker stores
 account sessions, cached messages, and media in its persistent data volume.

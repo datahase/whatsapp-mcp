@@ -1,13 +1,19 @@
 #!/bin/sh
 set -eu
 
-prefix=${1:-"$HOME/.local"}
-case "$prefix" in
-    -h|--help) printf '%s\n' 'Usage: sh scripts/install-cli.sh [PREFIX]' 'Also supports: curl -fsSL INSTALLER_URL | sh -s -- [PREFIX]' 'Default: $HOME/.local. Use /usr/local for a system installation.' 'WHATSAPP_MCP_REF selects the GitHub branch, tag or commit (default: main).'; exit 0 ;;
-    /*) ;;
+prefix=$HOME/.local
+setup_now=false
+case "${1:-}" in
+    -h|--help)
+        printf '%s\n' 'Usage: sh scripts/install-cli.sh [PREFIX] [--setup [SETUP_OPTIONS]]' 'Default prefix: $HOME/.local. Use /usr/local for a system installation.' 'Add --setup to deploy the Docker server after installation.' 'WHATSAPP_MCP_REF selects the GitHub branch, tag or commit (default: main).'
+        exit 0 ;;
+    /*) prefix=$1; shift ;;
+    '') ;;
+    --setup) ;;
     *) printf '%s\n' 'Installation prefix must be an absolute path.' >&2; exit 1 ;;
 esac
-[ "$#" -le 1 ] || { printf '%s\n' 'Expected at most one installation prefix.' >&2; exit 1; }
+if [ "${1:-}" = --setup ]; then setup_now=true; shift; fi
+if [ "$setup_now" = false ] && [ "$#" -ne 0 ]; then printf '%s\n' 'Unexpected installer arguments. Use --setup before deployment options.' >&2; exit 1; fi
 target=$prefix/bin/whatsapp-mcp
 if [ -e "$target" ] || [ -L "$target" ]; then
     if [ -L "$target" ] || ! grep -q '^# whatsapp-mcp Docker management CLI$' "$target"; then
@@ -54,3 +60,13 @@ case ":$PATH:" in
     *":$prefix/bin:"*) printf '%s\n' 'Ready: whatsapp-mcp status' ;;
     *) printf 'Add this directory to your PATH: %s/bin\nThen run: whatsapp-mcp status\n' "$prefix" ;;
 esac
+
+if [ "$setup_now" = true ]; then
+    if [ -n "$temp_dir" ]; then rm -rf "$temp_dir"; temp_dir=; fi
+    # Install system-wide with sudo, then keep deployment files owned by the
+    # invoking user. Docker access is checked again for that user by setup.
+    if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+        exec sudo -H -u "$SUDO_USER" "$target" setup "$@"
+    fi
+    exec "$target" setup "$@"
+fi

@@ -6,6 +6,7 @@ usage() {
     cat <<'HELP'
 Usage: whatsapp-mcp [--container NAME] COMMAND
 
+  setup [ARGS]  Deploy Docker and configure access (see setup --help)
   login         Generate a one-time admin sign-in code
   status        Show container state and health
   logs [ARGS]   Show the last 50 log lines (add --follow to stream)
@@ -21,6 +22,238 @@ HELP
 }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
+setup_help() {
+    cat <<'HELP'
+Usage: whatsapp-mcp setup [OPTIONS]
+
+  --mode local|tailscale|funnel|https   Access mode (interactive when omitted)
+  --url https://HOST                  Origin for an existing HTTPS proxy
+  --port NUMBER                       Docker host port (default: 8765)
+  --https-port 443|8443|10000          Tailscale HTTPS port (default: 443)
+  --dir PATH                          Configuration directory
+  --project NAME                      Compose project (default: whatsapp-mcp)
+  --image REFERENCE                   Image to deploy (default: release 0.4.0)
+  --env-file PATH                     Import advanced settings on first setup
+  --no-pull                           Use an image already present locally
+  --yes                               Use defaults without prompting
+
+Docker and Compose must already be installed and accessible. Tailscale modes
+also require Tailscale installed and signed in on this host. Funnel exposes
+the admin login and OAuth endpoints publicly. Existing configurations, secrets
+and volumes are preserved; rerunning setup keeps existing network settings.
+HELP
+}
+
+setup_env_get() {
+    sed -n "s/^[[:space:]]*$1=//p" "$setup_env" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//"
+}
+setup_env_set() {
+    setup_key=$1 setup_value=$2
+    awk -v key="$setup_key" -v value="$setup_value" '$0 !~ "^[[:space:]]*" key "=" {print} END {print key "=" value}' "$setup_env" > "$setup_env.next"
+    mv "$setup_env.next" "$setup_env"
+}
+setup_origin_check() {
+    case "$1" in https://*) ;; *) fail 'Use an HTTPS origin, for example https://server.example.com (without /mcp).' ;; esac
+    setup_authority=${1#https://}
+    case "$setup_authority" in ''|*/*|*\?*|*\#*|*@*|*\\*) fail 'Use an HTTPS origin without a path, credentials, query or fragment.' ;; esac
+    printf '%s' "$1" | LC_ALL=C grep -q '[[:space:]]' && fail 'HTTPS origin must not contain whitespace.'
+    return 0
+}
+setup_compose() { docker compose --project-name "$setup_project" --project-directory "$setup_dir" -f "$setup_dir/compose.yaml" "$@"; }
+setup_ts() {
+    if [ "$(id -u)" -eq 0 ]; then tailscale "$@"; else sudo tailscale "$@"; fi
+}
+
+setup_deployment() (
+    umask 077
+    setup_mode= setup_url= setup_port= setup_dir= setup_image= setup_import=
+    setup_tls=443 setup_project=whatsapp-mcp setup_yes=false setup_pull=true
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h|--help) setup_help; exit 0 ;;
+            --yes|--non-interactive) setup_yes=true; shift ;;
+            --no-pull) setup_pull=false; shift ;;
+            --mode|--url|--port|--https-port|--dir|--image|--env-file|--project)
+                [ "$#" -ge 2 ] || fail "Missing value for $1"
+                case "$1" in
+                    --mode) setup_mode=$2 ;; --url) setup_url=${2%/} ;; --port) setup_port=$2 ;;
+                    --https-port) setup_tls=$2 ;; --dir) setup_dir=$2 ;; --image) setup_image=$2 ;;
+                    --env-file) setup_import=$2 ;; --project) setup_project=$2 ;;
+                esac
+                shift 2 ;;
+            *) fail "Unknown setup option: $1. Run: whatsapp-mcp setup --help" ;;
+        esac
+    done
+    case "$setup_project" in ''|*[!a-z0-9_-]*|-*|_*) fail 'Project must start with a lowercase letter or digit and contain only lowercase letters, digits, underscores or dashes.' ;; esac
+    case "$setup_mode" in ''|local|tailscale|funnel|https) ;; *) fail 'Mode must be local, tailscale, funnel or https.' ;; esac
+    case "$setup_tls" in 443|8443|10000) ;; *) fail 'Tailscale HTTPS port must be 443, 8443 or 10000.' ;; esac
+    command -v docker >/dev/null 2>&1 || fail 'Install Docker first, start it, and make sure your user can run docker ps.'
+    docker info >/dev/null 2>&1 || fail 'Cannot access Docker. Start it and check that your user can run docker ps.'
+    docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required.'
+
+    setup_ids=$(docker ps -aq --filter label=com.docker.compose.service=whatsapp-mcp --filter "label=com.docker.compose.project=$setup_project" --filter label=com.docker.compose.oneoff=False)
+    if [ -n "$setup_ids" ]; then
+        [ "$(printf '%s\n' "$setup_ids" | wc -l | tr -d ' ')" -eq 1 ] || fail 'Multiple containers for this project. Inspect Docker before setup.'
+        setup_existing_dir=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$setup_ids")
+        if [ -z "$setup_dir" ]; then setup_dir=$setup_existing_dir; fi
+        [ -n "$setup_dir" ] && [ -f "$setup_dir/.env" ] || fail 'Existing deployment found. Pass --dir pointing to its original directory containing .env; settings will not be regenerated.'
+        [ "$(CDPATH= cd -- "$setup_dir" && pwd -P)" = "$(CDPATH= cd -- "$setup_existing_dir" && pwd -P)" ] || fail 'This project already uses a different directory. Reuse it or choose another --project and --port.'
+    fi
+    if [ -z "$setup_dir" ]; then setup_dir=${XDG_DATA_HOME:-$HOME/.local/share}/whatsapp-mcp; fi
+    mkdir -p "$setup_dir"
+    setup_dir=$(CDPATH= cd -- "$setup_dir" && pwd -P)
+    # Lock setup separately from the running application's own data lock.
+    mkdir "$setup_dir/.setup-lock" 2>/dev/null || fail "Another setup may be running. Inspect $setup_dir/.setup-lock before retrying."
+    setup_tmp=$(mktemp -d "$setup_dir/.setup.XXXXXXXX")
+    setup_network_pending=false
+    setup_cleanup() {
+        setup_exit=$?
+        if [ "$setup_network_pending" = true ]; then setup_ts serve "--https=$setup_tls" off >/dev/null 2>&1 || true; fi
+        rm -rf "$setup_tmp"
+        rmdir "$setup_dir/.setup-lock" 2>/dev/null || true
+        exit "$setup_exit"
+    }
+    trap setup_cleanup 0
+    trap 'exit 1' HUP INT TERM
+    setup_env=$setup_tmp/env
+    setup_had_env=false
+    if [ -L "$setup_dir/.env" ]; then fail "Existing .env is a symlink; manage its configuration explicitly."; fi
+    if [ -f "$setup_dir/.env" ]; then
+        setup_had_env=true
+        [ -z "$setup_import" ] || fail 'Existing .env is preserved. Edit it directly for advanced settings; --env-file is for first setup.'
+        cp "$setup_dir/.env" "$setup_env"
+        if [ -n "$setup_mode" ]; then
+            [ -f "$setup_dir/.setup-mode" ] && [ "$(cat "$setup_dir/.setup-mode")" = "$setup_mode" ] || fail 'Existing network settings are preserved. Omit --mode, or change the existing proxy and .env explicitly.'
+        fi
+        setup_mode=existing
+        [ -z "$setup_url" ] || fail 'Existing network settings are preserved; edit public_url in the existing .env and proxy configuration.'
+    else
+        if [ -n "$setup_import" ]; then
+            [ -f "$setup_import" ] || fail 'The --env-file does not exist.'
+            cp "$setup_import" "$setup_env"
+        else : > "$setup_env"; fi
+        if [ -z "$setup_mode" ] && [ -n "$(setup_env_get WHATSAPP_MCP_PUBLIC_URL)" ]; then
+            setup_mode=https
+            setup_url=$(setup_env_get WHATSAPP_MCP_PUBLIC_URL)
+        fi
+        if [ -z "$setup_mode" ]; then
+            setup_mode=local
+            if [ "$setup_yes" = false ] && ( : < /dev/tty ) 2>/dev/null; then
+                exec 3<>/dev/tty
+                printf '\nChoose access: 1) local  2) private Tailscale  3) public Funnel  4) existing HTTPS proxy\nSelection [1]: ' >&3
+                IFS= read -r setup_answer <&3 || exit 1
+                case "$setup_answer" in ''|1) setup_mode=local ;; 2) setup_mode=tailscale ;; 3) setup_mode=funnel ;; 4) setup_mode=https ;; *) fail 'Invalid selection.' ;; esac
+                if [ "$setup_mode" = https ] && [ -z "$setup_url" ]; then
+                    printf 'HTTPS origin (no /mcp): ' >&3
+                    IFS= read -r setup_url <&3 || exit 1
+                    setup_url=${setup_url%/}
+                fi
+                if [ -z "$setup_port" ]; then
+                    printf 'Docker host port [8765]: ' >&3
+                    IFS= read -r setup_port <&3 || exit 1
+                fi
+                if [ -z "$setup_import" ]; then
+                    printf 'Advanced .env file to import (optional, Enter to skip): ' >&3
+                    IFS= read -r setup_import <&3 || exit 1
+                    if [ -n "$setup_import" ]; then
+                        [ -f "$setup_import" ] || fail 'Advanced settings file does not exist.'
+                        cp "$setup_import" "$setup_env"
+                    fi
+                fi
+            fi
+        fi
+    fi
+    if [ -z "$setup_image" ]; then setup_image=$(setup_env_get WHATSAPP_MCP_IMAGE); fi
+    if [ -z "$setup_image" ]; then setup_image=datahase/whatsapp-mcp:0.4.0; fi
+    case "$setup_image" in ''|*[!a-zA-Z0-9_./:@-]*|-*) fail 'Invalid image reference.' ;; esac
+    setup_old_port=$(setup_env_get HOST_PORT)
+    if [ -z "$setup_port" ]; then setup_port=${setup_old_port:-8765}; fi
+    case "$setup_port" in ''|*[!0-9]*) fail 'Port must be a number from 1 to 65535.' ;; esac
+    [ "$setup_port" -ge 1 ] && [ "$setup_port" -le 65535 ] || fail 'Port must be from 1 to 65535.'
+    if [ "$setup_mode" = existing ] && [ -n "$(setup_env_get WHATSAPP_MCP_PUBLIC_URL)" ] && [ "$setup_port" != "${setup_old_port:-8765}" ]; then fail 'Changing an existing proxy port requires updating the proxy too. Edit that deployment explicitly.'; fi
+    if [ "$setup_mode" = https ]; then setup_origin_check "$setup_url"; fi
+    case "$setup_mode" in
+        tailscale|funnel)
+            command -v tailscale >/dev/null 2>&1 || fail 'Install Tailscale and sign in on this host first.'
+            tailscale ip -4 >/dev/null 2>&1 || fail 'Tailscale is not connected. Sign in first.'
+            setup_ts_config=$(tailscale serve status --json)
+            if printf '%s' "$setup_ts_config" | grep -q "\"$setup_tls\"[[:space:]]*:"; then fail "Tailscale already uses HTTPS port $setup_tls. Choose another --https-port; existing routes were not changed."; fi
+            if [ "$(id -u)" -ne 0 ]; then command -v sudo >/dev/null 2>&1 || fail 'Tailscale configuration requires sudo on this host.'; fi
+            ;;
+    esac
+    for setup_key in WHATSAPP_MCP_TOKEN WHATSAPP_MCP_ADMIN_PASSWORD; do
+        if [ -z "$(setup_env_get "$setup_key")" ]; then setup_env_set "$setup_key" "$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"; fi
+    done
+    setup_env_set HOST_PORT "$setup_port"
+    setup_env_set WHATSAPP_MCP_IMAGE "$setup_image"
+    if [ -z "$(setup_env_get BIND_IP)" ]; then setup_env_set BIND_IP 127.0.0.1; fi
+    if [ -z "$(setup_env_get AI_ENABLED)" ]; then setup_env_set AI_ENABLED false; fi
+    if [ "$setup_mode" != existing ]; then
+        case "$setup_mode" in
+            local) setup_env_set WHATSAPP_MCP_PUBLIC_URL ''; setup_env_set WHATSAPP_MCP_OAUTH_ONLY false ;;
+            https) setup_env_set WHATSAPP_MCP_PUBLIC_URL "$setup_url"; setup_env_set WHATSAPP_MCP_OAUTH_ONLY true ;;
+        esac
+    fi
+    command -v curl >/dev/null 2>&1 || fail 'curl is required to download deployment files.'
+    if [ ! -f "$setup_dir/compose.yaml" ]; then
+        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.4.0/compose.yaml --output "$setup_tmp/compose.yaml"
+        cp "$setup_tmp/compose.yaml" "$setup_dir/compose.yaml"
+    fi
+    setup_previous_image=
+    if [ -n "$setup_ids" ]; then setup_previous_image=$(docker inspect --format '{{.Image}}' "$setup_ids"); fi
+    printf 'Configuration: %s\nImage: %s\nAccess mode: %s\n' "$setup_dir" "$setup_image" "$setup_mode"
+    if [ "$setup_pull" = true ]; then docker pull "$setup_image"; else docker image inspect "$setup_image" >/dev/null 2>&1 || fail 'The --no-pull image is not present locally.'; fi
+    case "$setup_mode" in
+        tailscale|funnel)
+            setup_bind=$(setup_env_get BIND_IP)
+            setup_target=http://$setup_bind:$setup_port
+            # Publish only harmless private text until our own container is healthy.
+            setup_ts_output=$(setup_ts serve --bg "--https=$setup_tls" "text:WhatsApp MCP setup in progress")
+            setup_network_pending=true
+            printf '%s\n' "$setup_ts_output"
+            setup_url=$(printf '%s\n' "$setup_ts_output" | sed -n 's/^[[:space:]]*\(https:\/\/[^/[:space:]]*\)\/.*/\1/p;s/^[[:space:]]*\(https:\/\/[^/[:space:]]*\)[[:space:]]*$/\1/p' | head -n 1)
+            setup_origin_check "$setup_url"
+            setup_env_set WHATSAPP_MCP_PUBLIC_URL "$setup_url"
+            setup_env_set WHATSAPP_MCP_OAUTH_ONLY true
+            ;;
+    esac
+    if [ "$setup_had_env" = true ]; then
+        setup_backup=$setup_dir/backups/setup-$(date -u +%Y%m%dT%H%M%SZ)-$$
+        mkdir -p "$setup_backup"
+        cp "$setup_dir/.env" "$setup_backup/.env"
+    fi
+    cp "$setup_env" "$setup_tmp/env.ready"
+    mv "$setup_tmp/env.ready" "$setup_dir/.env"
+    if ! setup_compose config --quiet || ! setup_compose run --rm --no-deps -T whatsapp-mcp check-config; then
+        if [ "$setup_had_env" = true ]; then cp "$setup_backup/.env" "$setup_dir/.env"; fi
+        fail 'Configuration validation failed. Existing settings were restored; no running container was replaced.'
+    fi
+    if ! setup_compose up -d --no-build --wait --wait-timeout 120; then
+        if [ "$setup_had_env" = true ]; then
+            cp "$setup_backup/.env" "$setup_dir/.env"
+            case "$setup_previous_image" in
+                sha256:*)
+                    if WHATSAPP_MCP_IMAGE="$setup_previous_image" setup_compose up -d --no-build --wait --wait-timeout 120; then
+                        fail 'The new container failed its health check. Previous settings and the previous image were restored.'
+                    fi ;;
+            esac
+            fail "Startup failed. Previous settings were restored; inspect the container and backup at $setup_backup. Account data was retained."
+        fi
+        fail "Startup failed. Configuration and account data are retained in $setup_dir. Inspect docker compose logs there."
+    fi
+    case "$setup_mode" in
+        tailscale) setup_ts serve --bg "--https=$setup_tls" "$setup_target" ;;
+        funnel) setup_ts funnel --bg "--https=$setup_tls" "$setup_target" ;;
+    esac
+    setup_network_pending=false
+    if [ "$setup_mode" != existing ]; then printf '%s\n' "$setup_mode" > "$setup_dir/.setup-mode"; fi
+    setup_url=$(setup_env_get WHATSAPP_MCP_PUBLIC_URL)
+    if [ -z "$setup_url" ]; then setup_url=http://127.0.0.1:$setup_port; fi
+    printf '\nReady. Admin: %s/admin\nMCP endpoint: %s/mcp\n\n' "$setup_url" "$setup_url"
+    setup_compose exec -T whatsapp-mcp whatsapp-mcp login-code
+    printf '\nOpen the admin page, enter the code, then choose Add account to link WhatsApp.\nSettings: %s/.env\n' "$setup_dir"
+)
+
 container=${WHATSAPP_MCP_CONTAINER:-}
 if [ "${1:-}" = --container ]; then
     [ "$#" -ge 3 ] || fail 'Use: whatsapp-mcp --container NAME COMMAND'
@@ -30,6 +263,7 @@ fi
 command=${1:-help}
 case "$command" in
     help|-h|--help) usage; exit 0 ;;
+    setup) [ -z "$container" ] || fail "Use --project to select a setup deployment; --container selects management commands."; shift; setup_deployment "$@"; exit $? ;;
     login|login-code|status|start|stop|restart|logs) shift ;;
     *) usage >&2; fail "Unknown command: $command" ;;
 esac

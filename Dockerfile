@@ -14,6 +14,7 @@ RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
+COPY assets/brand/whatsapp-mcp-icon.png assets/brand/whatsapp-mcp-logo-transparent.png /src/assets/brand/
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 

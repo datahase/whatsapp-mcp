@@ -25,6 +25,7 @@ var staticFiles embed.FS
 func (s *Server) mountAdmin() {
 	sub, _ := fs.Sub(staticFiles, "static")
 	s.mux.Handle("GET /admin/_next/", http.StripPrefix("/admin/", http.FileServerFS(sub)))
+	s.mux.Handle("GET /admin/brand/", http.StripPrefix("/admin/", http.FileServerFS(sub)))
 	s.mux.HandleFunc("GET /admin/login", s.loginPage)
 	s.mux.HandleFunc("POST /admin/login", s.loginSubmit)
 	s.mux.HandleFunc("POST /admin/logout", s.admin(s.adminLogout))

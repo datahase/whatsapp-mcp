@@ -425,6 +425,18 @@ func TestSameOriginNullOriginAndAdminAssets(t *testing.T) {
 			t.Fatalf("asset %s: %d", a[1], r.StatusCode)
 		}
 	}
+	for _, name := range []string{"whatsapp-mcp-icon.png", "whatsapp-mcp-logo-transparent.png"} {
+		want, err := staticFiles.ReadFile("static/brand/" + name)
+		if err != nil {
+			t.Fatalf("brand asset not built: %v", err)
+		}
+		r := do(t, "GET", srv.URL+"/admin/brand/"+name, nil, nil)
+		got, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+		if r.StatusCode != http.StatusOK || r.Header.Get("Content-Type") != "image/png" || sha256.Sum256(got) != sha256.Sum256(want) {
+			t.Fatalf("brand asset %s: status=%d type=%q or content changed", name, r.StatusCode, r.Header.Get("Content-Type"))
+		}
+	}
 
 }
 
