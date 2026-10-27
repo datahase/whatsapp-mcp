@@ -101,3 +101,27 @@ func mustRead(r *http.Request) []byte {
 	b, _ := io.ReadAll(r.Body)
 	return b
 }
+
+func TestAssemblyAIFailedDeleteIsQueued(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/upload":
+			_, _ = w.Write([]byte(`{"upload_url":"https://cdn/x"}`))
+		case r.Method == http.MethodPost:
+			_, _ = w.Write([]byte(`{"id":"tr9","status":"completed","text":"ok"}`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"nope"}`))
+		}
+	}))
+	defer srv.Close()
+	var queued string
+	p, _, _ := newProvider(ProviderAssemblyAI, srv.URL, testKey, "native", 5*time.Second, func(name, _ string) { queued = name })
+	dispatched := false
+	if _, _, err := p.Transcribe(context.Background(), "", []byte("OggS"), "audio/ogg", "", func() { dispatched = true }); err != nil {
+		t.Fatal(err)
+	}
+	if queued != "tr9" || !dispatched {
+		t.Fatalf("queued=%q dispatched=%v", queued, dispatched)
+	}
+}

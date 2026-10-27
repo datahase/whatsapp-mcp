@@ -181,7 +181,7 @@ func (a *Account) prepareMedia(ctx context.Context, req SendRequest) (out *clien
 	if obj.Codec == "opus" && obj.MIME == "audio/ogg; codecs=opus" {
 		return out, "", nil
 	}
-	conv, err := media.ConvertToOpusOgg(ctx, path, a.WorkDir(), 0)
+	conv, err := media.ConvertToOpusOgg(ctx, path, a.WorkDir(), voiceCap(req.MaxVoice))
 	if err != nil {
 		return nil, "", err
 	}
@@ -191,6 +191,14 @@ func (a *Account) prepareMedia(ctx context.Context, req SendRequest) (out *clien
 	}
 	out.Path, out.MIME, out.DurationSec = conv, info.MIME, secs(info.DurationMS)
 	return out, conv, nil
+}
+
+// voiceCap bounds conversion output even when an input lies about its length.
+func voiceCap(maxVoice int) int {
+	if maxVoice > 0 {
+		return maxVoice
+	}
+	return 30 * 60
 }
 
 func secs(ms int64) uint32 {

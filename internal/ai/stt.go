@@ -116,6 +116,18 @@ func (p *elevenLabsProvider) Transcribe(ctx context.Context, model string, audio
 type assemblyAIProvider struct {
 	c    *Client
 	poll time.Duration
+	// onCleanupFail records a transcript whose deletion failed, for retry.
+	onCleanupFail func(name, msg string)
+}
+
+// Delete removes a transcript (used by the cleanup retry loop).
+func (p *assemblyAIProvider) Delete(ctx context.Context, id string) error {
+	_, _, err := p.c.do(ctx, http.MethodDelete, p.c.base+"/v2/transcript/"+url.PathEscape(id), nil, nil)
+	var e *Error
+	if errors.As(err, &e) && e.Status == http.StatusNotFound {
+		return nil
+	}
+	return err
 }
 
 func (p *assemblyAIProvider) Redact(s string) string { return p.c.redact(s) }
@@ -123,7 +135,11 @@ func (p *assemblyAIProvider) Generate(context.Context, string, GenRequest, func(
 	return "", Usage{}, errTranscribeOnly
 }
 
+// Transcribe uploads, submits, polls and then deletes the transcript.
+// AssemblyAI documents no endpoint to delete a raw upload, so audio uploaded
+// before a failed submit cannot be removed through the API.
 func (p *assemblyAIProvider) Transcribe(ctx context.Context, model string, audio []byte, _, lang string, dispatched func()) (string, Usage, error) {
+	dispatched() // the audio leaves this server with the upload
 	_, b, err := p.c.do(ctx, http.MethodPost, p.c.base+"/v2/upload", audio, map[string]string{"Content-Type": "application/octet-stream"})
 	if err != nil {
 		return "", Usage{}, err
@@ -145,7 +161,6 @@ func (p *assemblyAIProvider) Transcribe(ctx context.Context, model string, audio
 		req["language_detection"] = true
 	}
 	body, _ := json.Marshal(req)
-	dispatched()
 	_, b, err = p.c.do(ctx, http.MethodPost, p.c.base+"/v2/transcript", body, map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return "", Usage{}, err
@@ -159,11 +174,14 @@ func (p *assemblyAIProvider) Transcribe(ctx context.Context, model string, audio
 	if json.Unmarshal(b, &t) != nil || t.ID == "" {
 		return "", Usage{}, &Error{Kind: KindInvalidOutput, Message: "AssemblyAI returned no transcript id"}
 	}
-	// Remove the transcript (and AssemblyAI's copy of its text) once done.
+	// Remove the transcript (and AssemblyAI's copy of its text) once done;
+	// a failed deletion is queued for retry.
 	defer func() {
 		dctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_, _, _ = p.c.do(dctx, http.MethodDelete, p.c.base+"/v2/transcript/"+url.PathEscape(t.ID), nil, nil)
+		if err := p.Delete(dctx, t.ID); err != nil && p.onCleanupFail != nil {
+			p.onCleanupFail(t.ID, p.c.redact(err.Error()))
+		}
 	}()
 	interval := p.poll
 	if interval == 0 {

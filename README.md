@@ -195,7 +195,8 @@ unless `AI_ALLOW_FREE_MODELS=true`, because free variants may log prompts.
 App allowances: 30 audio minutes and 50 requests per UTC day, 10 minutes per
 note (`AI_DAILY_AUDIO_MINUTES`, `AI_DAILY_REQUESTS`). These are local limits,
 not a provider billing cap. Audio uploaded to Gemini's Files API is deleted
-after each job, and AssemblyAI transcripts are deleted after retrieval.
+after each job, and AssemblyAI transcripts are deleted after retrieval (failed
+deletions are retried; AssemblyAI offers no API to delete a raw upload).
 Deletion does not guarantee zero provider-side retention. Calls may wait up
 to 45 seconds; longer jobs return a `job_id` for `get_analysis_job`.
 

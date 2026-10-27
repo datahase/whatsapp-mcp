@@ -99,11 +99,17 @@ func (s *Service) init(cfg config.AI, p Provider, c *Client, dataDir string, max
 		s.tp = p
 	}
 	s.worker, s.maxQ, s.ctx, s.cancel, s.now = make(chan struct{}, 1), int32(maxQueued), ctx, cancel, time.Now
-	if g, ok := s.tp.(*geminiProvider); ok {
-		if g.onCleanupFail == nil {
-			g.onCleanupFail = s.recordCleanup
+	switch t := s.tp.(type) {
+	case *geminiProvider:
+		if t.onCleanupFail == nil {
+			t.onCleanupFail = s.recordCleanup
 		}
-		s.client = g.c // provider-file cleanup retries go to the transcriber
+	case *assemblyAIProvider:
+		if t.onCleanupFail == nil {
+			t.onCleanupFail = s.recordCleanup
+		}
+	}
+	if _, ok := s.tp.(cleaner); ok {
 		s.wg.Add(1)
 		go func() { defer s.wg.Done(); s.retryCleanups() }()
 	}
@@ -378,10 +384,10 @@ func (s *Service) retryCleanups() {
 			rows.Close()
 			for _, n := range names {
 				ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
-				if err := s.client.DeleteFile(ctx, n); err == nil {
+				if err := s.tp.(cleaner).Delete(ctx, n); err == nil {
 					_, _ = s.ledger.Exec("DELETE FROM provider_cleanup WHERE file_name = ?", n)
 				} else {
-					_, _ = s.ledger.Exec("UPDATE provider_cleanup SET attempts = attempts + 1, last_error = ? WHERE file_name = ?", s.client.redact(err.Error()), n)
+					_, _ = s.ledger.Exec("UPDATE provider_cleanup SET attempts = attempts + 1, last_error = ? WHERE file_name = ?", s.redact(err.Error()), n)
 				}
 				cancel()
 			}
@@ -454,7 +460,7 @@ func (s *Service) Transcribe(ctx context.Context, a *accounts.Account, src Sourc
 		run: func(ctx context.Context, j *store.Job, dispatched func()) (any, Usage, error) {
 			audioPath, mime := path, strings.TrimSpace(strings.SplitN(obj.MIME, ";", 2)[0])
 			if s.cfg.AudioFormat == "wav" {
-				wav, err := media.ConvertToWAV(ctx, path, a.WorkDir())
+				wav, err := media.ConvertToWAV(ctx, path, a.WorkDir(), s.cfg.MaxAudioSeconds)
 				if err != nil {
 					return nil, Usage{}, err
 				}

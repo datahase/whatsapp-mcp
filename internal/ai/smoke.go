@@ -40,7 +40,7 @@ func Smoke(ctx context.Context, cfg config.AI, key, transcribeKey, audioPath, im
 		}
 		path, mime := audioPath, strings.TrimSpace(strings.SplitN(info.MIME, ";", 2)[0])
 		if cfg.AudioFormat == "wav" {
-			wav, err := media.ConvertToWAV(ctx, audioPath, os.TempDir())
+			wav, err := media.ConvertToWAV(ctx, audioPath, os.TempDir(), 600)
 			if err != nil {
 				return out, err
 			}

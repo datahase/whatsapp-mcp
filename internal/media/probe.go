@@ -276,12 +276,23 @@ func ConvertToOpusOgg(ctx context.Context, inputPath, workDir string, maxSeconds
 		}
 		return "", fmt.Errorf("ffmpeg conversion failed: %s", sanitizeStderr(stderr.String()))
 	}
+	// 16 kHz mono 16-bit is 32,000 bytes per second, plus a small header.
+	if fi, err := os.Stat(out); err != nil || fi.Size() > int64(maxSeconds)*32000+64<<10 {
+		os.Remove(out)
+		return "", errors.New("converted audio exceeds the size implied by the duration limit")
+	}
 	return out, nil
 }
 
 // ConvertToWAV converts audio to 16 kHz mono 16-bit WAV in workDir, for
-// analysis providers that do not accept Ogg/Opus. The caller removes it.
-func ConvertToWAV(ctx context.Context, inputPath, workDir string) (string, error) {
+// analysis providers that do not accept Ogg/Opus. Output is cut at
+// maxSeconds regardless of what the input's header claims, and its size is
+// checked, so a crafted file cannot produce an unbounded WAV. The caller
+// removes it.
+func ConvertToWAV(ctx context.Context, inputPath, workDir string, maxSeconds int) (string, error) {
+	if maxSeconds <= 0 {
+		return "", errors.New("maxSeconds must be positive")
+	}
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return "", errors.New("ffmpeg not found on PATH")
 	}
@@ -298,7 +309,7 @@ func ConvertToWAV(ctx context.Context, inputPath, workDir string) (string, error
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
 		"-i", sanitizeFFmpegInputPath(inputPath), "-vn", "-map_metadata", "-1",
-		"-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "-y", out)
+		"-t", strconv.Itoa(maxSeconds), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "-y", out)
 	cmd.Env = minimalEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

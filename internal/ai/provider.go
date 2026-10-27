@@ -53,6 +53,16 @@ type geminiProvider struct {
 
 func (g *geminiProvider) Redact(s string) string { return g.c.redact(s) }
 
+// Delete removes an uploaded file (used by the cleanup retry loop).
+func (g *geminiProvider) Delete(ctx context.Context, name string) error {
+	return g.c.DeleteFile(ctx, name)
+}
+
+// cleaner is a provider that leaves remote data to delete after a job.
+type cleaner interface {
+	Delete(ctx context.Context, name string) error
+}
+
 // Transcribe uploads the audio, requests a verbatim transcript and always
 // deletes the uploaded file.
 func (g *geminiProvider) Transcribe(ctx context.Context, model string, audio []byte, mime, lang string, dispatched func()) (string, Usage, error) {
@@ -306,7 +316,7 @@ func newProvider(kind, base, key, method string, timeout time.Duration, onCleanu
 		return &elevenLabsProvider{c: c}, c, nil
 	case ProviderAssemblyAI:
 		c := withAuth(base, key, "authorization", "", timeout)
-		return &assemblyAIProvider{c: c}, c, nil
+		return &assemblyAIProvider{c: c, onCleanupFail: onCleanupFail}, c, nil
 	case ProviderOpenAI, ProviderGroq, ProviderOpenRouter, ProviderOpenAICompatible:
 		c := NewOpenAIClient(base, key, timeout)
 		p := &openAIProvider{c: c, method: method}
