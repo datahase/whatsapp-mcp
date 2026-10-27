@@ -434,18 +434,31 @@ func (s *Store) InvalidateDerived(chatJID, messageID string) (mediaPaths []strin
 	return mediaPaths, err
 }
 
-// RevokeMessage clears the content and media keys of a revoked message.
-func (s *Store) RevokeMessage(chatJID, messageID string) error {
-	_, err := s.db.Exec(`UPDATE messages SET content = '[message deleted by sender]', media_type = NULL, filename = NULL, url = NULL,
+// senderMatch restricts edits/revokes to the original author: our own
+// messages when fromMe, otherwise rows whose stored sender matches.
+const senderMatch = " AND ((? AND is_from_me = 1) OR (NOT ? AND is_from_me = 0 AND sender = ?))"
+
+// RevokeMessage clears the content and media keys of a revoked message. It
+// reports whether a row by that sender was changed.
+func (s *Store) RevokeMessage(chatJID, messageID, sender string, fromMe bool) (bool, error) {
+	r, err := s.db.Exec(`UPDATE messages SET content = '[message deleted by sender]', media_type = NULL, filename = NULL, url = NULL,
 		direct_path = NULL, media_key = NULL, file_sha256 = NULL, file_enc_sha256 = NULL, file_length = NULL
-		WHERE chat_jid = ? AND id = ?`, chatJID, messageID)
-	return err
+		WHERE chat_jid = ? AND id = ?`+senderMatch, chatJID, messageID, fromMe, fromMe, sender)
+	return affected(r, err)
 }
 
-// EditMessage replaces the text of an edited message.
-func (s *Store) EditMessage(chatJID, messageID, content string) error {
-	_, err := s.db.Exec("UPDATE messages SET content = ? WHERE chat_jid = ? AND id = ?", content, chatJID, messageID)
-	return err
+// EditMessage replaces the text of an edited message by the same sender.
+func (s *Store) EditMessage(chatJID, messageID, content, sender string, fromMe bool) (bool, error) {
+	r, err := s.db.Exec("UPDATE messages SET content = ? WHERE chat_jid = ? AND id = ?"+senderMatch, content, chatJID, messageID, fromMe, fromMe, sender)
+	return affected(r, err)
+}
+
+func affected(r sql.Result, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	n, _ := r.RowsAffected()
+	return n > 0, nil
 }
 
 // SetCacheFull toggles the message-cache budget guard.

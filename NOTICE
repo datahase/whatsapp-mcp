@@ -1,0 +1,16 @@
+whatsapp-mcp
+Copyright (C) 2026 The whatsapp-mcp contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License in LICENSE for more details.
+
+Portions of this program are derived from Sealjay/mcp-whatsapp, which is
+licensed under the MIT License; its notice is reproduced in LICENSE-UPSTREAM-MIT
+and must be kept with those portions.
+

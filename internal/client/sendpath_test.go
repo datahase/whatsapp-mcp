@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	wmstore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
@@ -157,5 +160,41 @@ func TestDownloadMessageMediaBoundsAndVerifies(t *testing.T) {
 	}
 	if _, _, err := c.DownloadMessageMedia(ctx, msg.ChatJID, "M1", filepath.Join(t.TempDir(), "escape"), 10); err == nil {
 		t.Fatal("destination outside account accepted")
+	}
+}
+
+// Only the original sender (or we, for our own messages) can edit or revoke
+// a cached message; another participant's protocol message is ignored.
+func TestEditRevokeRequireOriginalSender(t *testing.T) {
+	c := newSendTestClient(t, &fakeWire{})
+	ctx := context.Background()
+	chat := "123-456@g.us"
+	_ = c.store.StoreChat(chat, "g", time.Now())
+	_ = c.store.StoreMessage(ctx, store.Message{ID: "M1", ChatJID: chat, Sender: "15550000001", Content: "original", Timestamp: time.Now()}, nil, nil, nil, 0)
+	edit := func(text string) *waProto.Message {
+		return &waProto.Message{ProtocolMessage: &waProto.ProtocolMessage{Type: waProto.ProtocolMessage_MESSAGE_EDIT.Enum(),
+			Key: &waCommon.MessageKey{ID: proto.String("M1")}, EditedMessage: &waProto.Message{Conversation: proto.String(text)}}}
+	}
+	revoke := &waProto.Message{ProtocolMessage: &waProto.ProtocolMessage{Type: waProto.ProtocolMessage_REVOKE.Enum(), Key: &waCommon.MessageKey{ID: proto.String("M1")}}}
+	content := func() string {
+		mc, err := c.store.GetMessageContext(ctx, chat, "M1", 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mc.Message.Content
+	}
+	c.handleProtocol(chat, "15550000002", false, edit("forged"))
+	c.handleProtocol(chat, "15550000002", false, revoke)
+	c.handleProtocol(chat, "", true, revoke) // we did not send M1
+	if got := content(); got != "original" {
+		t.Fatalf("other participant changed the message: %q", got)
+	}
+	c.handleProtocol(chat, "15550000001", false, edit("fixed typo"))
+	if got := content(); got != "fixed typo" {
+		t.Fatalf("sender's edit not applied: %q", got)
+	}
+	c.handleProtocol(chat, "15550000001", false, revoke)
+	if got := content(); got != "[message deleted by sender]" {
+		t.Fatalf("sender's revoke not applied: %q", got)
 	}
 }

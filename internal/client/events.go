@@ -56,8 +56,12 @@ func (c *Client) handleReceipt(r *events.Receipt) {
 }
 
 // handleProtocol applies revokes and edits to cached content. It returns
-// true when msg was a protocol message and needs no further storage.
-func (c *Client) handleProtocol(chatJID string, msg *waProto.Message) bool {
+// true when msg was a protocol message and needs no further storage. A
+// change applies only when the protocol message comes from the original
+// sender (or both are our own), so another participant cannot rewrite or
+// blank someone else's cached message. Group-admin revokes are therefore
+// not applied.
+func (c *Client) handleProtocol(chatJID, sender string, fromMe bool, msg *waProto.Message) bool {
 	pm := msg.GetProtocolMessage()
 	if pm == nil {
 		return false
@@ -66,19 +70,23 @@ func (c *Client) handleProtocol(chatJID string, msg *waProto.Message) bool {
 	if target == "" {
 		return true
 	}
+	var changed bool
+	var err error
 	switch pm.GetType() {
 	case waProto.ProtocolMessage_REVOKE:
-		if err := c.store.RevokeMessage(chatJID, target); err != nil {
-			c.log.Warnf("Failed to apply revoke: %v", err)
-		}
+		changed, err = c.store.RevokeMessage(chatJID, target, sender, fromMe)
 	case waProto.ProtocolMessage_MESSAGE_EDIT:
 		if text := extractTextContent(pm.GetEditedMessage()); text != "" {
-			if err := c.store.EditMessage(chatJID, target, text); err != nil {
-				c.log.Warnf("Failed to apply edit: %v", err)
-			}
+			changed, err = c.store.EditMessage(chatJID, target, text, sender, fromMe)
 		}
 	default:
 		return true
+	}
+	if err != nil {
+		c.log.Warnf("Failed to apply edit/revoke: %v", err)
+	}
+	if !changed {
+		return true // unknown target, or not from the original sender
 	}
 	paths, err := c.store.InvalidateDerived(chatJID, target)
 	if err != nil {
@@ -188,7 +196,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 		msg.Message,
 	)
 
-	if msg.Message != nil && c.handleProtocol(nm.chatJID, msg.Message) {
+	if msg.Message != nil && c.handleProtocol(nm.chatJID, nm.msg.Sender, msg.Info.IsFromMe, msg.Message) {
 		return
 	}
 	// View-once media is shown once on the phone; do not keep a downloadable
@@ -237,7 +245,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 
 	if err == nil && len(pollOptions) > 0 {
 		if perr := c.store.StorePollMetadata(context.Background(), msg.Info.ID, nm.chatJID, pollOptions); perr != nil {
-			c.log.Warnf("Failed to store poll metadata for %s: %v", msg.Info.ID, perr)
+			c.log.Warnf("Failed to store poll metadata for %s: %v", c.redactor.MsgID(msg.Info.ID), perr)
 		}
 	}
 
@@ -283,7 +291,7 @@ func (c *Client) handleHistorySync(historySync *events.HistorySync) {
 
 		jid, err := types.ParseJID(rawChatJID)
 		if err != nil {
-			c.log.Warnf("Failed to parse JID %s: %v", rawChatJID, err)
+			c.log.Warnf("Failed to parse JID %s: %v", c.redactor.JID(rawChatJID), err)
 			continue
 		}
 
@@ -529,7 +537,7 @@ func (c *Client) handlePollVote(msg *events.Message, chatJID, voterJID string) {
 
 	vote, err := c.wa.DecryptPollVote(ctx, msg)
 	if err != nil {
-		c.log.Warnf("Failed to decrypt poll vote from %s in %s: %v", voterJID, chatJID, err)
+		c.log.Warnf("Failed to decrypt poll vote from %s in %s: %v", c.redactor.JID(voterJID), c.redactor.JID(chatJID), err)
 		return
 	}
 
@@ -537,7 +545,7 @@ func (c *Client) handlePollVote(msg *events.Message, chatJID, voterJID string) {
 	key := pu.GetPollCreationMessageKey()
 	pollID := key.GetID()
 	if pollID == "" {
-		c.log.Warnf("Poll vote missing poll creation message id (chat=%s)", chatJID)
+		c.log.Warnf("Poll vote missing poll creation message id (chat=%s)", c.redactor.JID(chatJID))
 		return
 	}
 
@@ -547,7 +555,7 @@ func (c *Client) handlePollVote(msg *events.Message, chatJID, voterJID string) {
 	if err != nil {
 		// No cached metadata — we've probably never seen the poll creation
 		// message. Log without listing option text and bail.
-		c.log.Warnf("Poll vote for unknown poll %s in %s: %v", pollID, chatJID, err)
+		c.log.Warnf("Poll vote for unknown poll %s in %s: %v", c.redactor.MsgID(pollID), c.redactor.JID(chatJID), err)
 		return
 	}
 
@@ -571,9 +579,9 @@ func (c *Client) handlePollVote(msg *events.Message, chatJID, voterJID string) {
 	}
 
 	if err := c.store.StorePollVote(ctx, pollID, chatJID, voterJID, selected, ts); err != nil {
-		c.log.Warnf("Failed to store poll vote for poll %s in %s: %v", pollID, chatJID, err)
+		c.log.Warnf("Failed to store poll vote for poll %s in %s: %v", c.redactor.MsgID(pollID), c.redactor.JID(chatJID), err)
 		return
 	}
 
-	c.log.Debugf("Recorded poll vote from %s on poll %s with %d selections", voterJID, pollID, len(selected))
+	c.log.Debugf("Recorded poll vote from %s on poll %s with %d selections", c.redactor.JID(voterJID), c.redactor.MsgID(pollID), len(selected))
 }

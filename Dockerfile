@@ -92,7 +92,7 @@ RUN set -eux; \
 COPY --from=ffmpeg /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe /usr/local/bin/
 COPY --from=ffmpeg /opt/ffmpeg/share/licenses/COPYING.LGPLv2.1 /usr/share/licenses/ffmpeg/
 COPY --from=build /out/whatsapp-mcp /usr/local/bin/whatsapp-mcp
-COPY LICENSE LICENSE-UPSTREAM-MIT THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt UPSTREAM.md /usr/share/licenses/whatsapp-mcp/
+COPY LICENSE NOTICE LICENSE-UPSTREAM-MIT THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt UPSTREAM.md /usr/share/licenses/whatsapp-mcp/
 USER 10001:10001
 ENV HOME=/tmp WHATSAPP_MCP_CONFIG=/config/config.yaml
 VOLUME ["/data"]

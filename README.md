@@ -191,7 +191,9 @@ troubleshooting: [docs/OPERATIONS.md](docs/OPERATIONS.md). Briefly:
 - History, old media availability and edits/revokes depend on what WhatsApp
   delivers to a linked device; this is not a phone backup. Media can expire
   on WhatsApp's servers.
-- View-once media is not retained.
+- View-once media is not retained. Edits and revokes are applied only when they
+  come from the original sender, so a group admin's "delete for everyone" of
+  someone else's message is not reflected in the cache.
 - Send rate limits (45 s interval, 30/hour; stricter for new contacts) are
   this app's policy, not official WhatsApp limits.
 - SQLite data is not encrypted at rest; use disk encryption on the host.
@@ -211,7 +213,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
-GPL-3.0-or-later (see [LICENSE](LICENSE)). Parts are derived from
+GPL-3.0-or-later (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Parts are derived from
 [Sealjay/mcp-whatsapp](https://github.com/Sealjay/mcp-whatsapp) under the MIT
 license, whose notice is kept in [LICENSE-UPSTREAM-MIT](LICENSE-UPSTREAM-MIT);
 see [UPSTREAM.md](UPSTREAM.md). Images also contain MPL-2.0 (whatsmeow) and
