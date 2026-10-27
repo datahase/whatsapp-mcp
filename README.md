@@ -13,7 +13,7 @@ session and data. AI features are optional and off by default.
 
 ## Quick start
 
-You need **Docker with Compose**, **curl**, **Git**, and WhatsApp on your phone.
+You need **Docker with Compose**, **curl**, and WhatsApp on your phone.
 Run the commands below on the computer that will host the Docker container.
 Linux and macOS are supported; Windows requires WSL and Docker Desktop and has
 not been tested. No Go or Node.js installation is needed for the server.
@@ -35,20 +35,23 @@ For installation without `sudo`, see the [CLI installation options](docs/OPERATI
 
 ### 2. Start the server
 
-Download the project and build the current version inside Docker:
+Download the deployment files and start the published image:
 
 ```sh
-git clone https://github.com/datahase/whatsapp-mcp.git
+mkdir -p whatsapp-mcp/scripts
 cd whatsapp-mcp
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/compose.yaml -o compose.yaml
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/.env.example -o .env.example
+curl -fsSL https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.3.0/scripts/init-env.sh -o scripts/init-env.sh
 sh scripts/init-env.sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
 
-For published releases, see [Docker Hub images](#docker-hub-images).
-
-The setup script creates a private `.env` file with random credentials. The
-first image build can take several minutes. Keep `.env` and the Docker data
-volume: they contain your configuration, credentials, and saved account data.
+These are configuration files and a setup helper; no source checkout or local
+image build is required. The setup script creates a private `.env` file with
+random credentials. Keep that file and the persistent Docker data volume.
+See [Docker Hub images](#docker-hub-images) for registry and version choices.
 
 Check startup:
 
@@ -125,26 +128,34 @@ Pull the published multi-platform image:
 docker pull datahase/whatsapp-mcp:latest
 ```
 
-For a fixed version:
+For a fixed release, or to pull from GHCR instead:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.2.0
+docker pull datahase/whatsapp-mcp:0.3.0
+docker pull ghcr.io/datahase/whatsapp-mcp:0.3.0
 ```
 
-Docker selects `linux/amd64` or `linux/arm64` for your host. The current Docker
-Hub release is **0.2.0**; the new admin UI, OAuth, and sign-in-code support in
-this README are newer changes on `main`. Use the **source build in step 2**
-for those features until a new image release is published. For the 0.2.0 image,
-follow its [versioned setup instructions](https://github.com/datahase/whatsapp-mcp/blob/v0.2.0/README.md).
+Both registries publish `0.3.0`, `0.3`, and `latest`, with `linux/amd64` and
+`linux/arm64` variants. Docker selects the variant for your host. To pin the
+image or use GHCR, set one of these in `.env`:
 
-Pulling an image only downloads it. A container also needs configuration and a
-persistent data volume. For a published-image deployment with compatible
-configuration, run from its Compose folder:
+```sh
+WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.3.0
+# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.3.0
+```
+
+Pulling an image downloads it. The [startup steps above](#2-start-the-server)
+provide configuration and persistent storage. After changing the image setting,
+apply it from the deployment folder:
 
 ```sh
 docker compose pull
 docker compose up -d --no-build
 ```
+
+To build from source instead, clone this repository, run
+`sh scripts/init-env.sh`, then `docker compose up -d --build`. Source development
+instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Remote access with Tailscale
 
@@ -229,12 +240,16 @@ Use paid provider access for personal media. Analysis runs only when requested.
 ## Updates and backups
 
 Follow the [backup and update guide](docs/OPERATIONS.md) before upgrading.
-For a source-based installation, update and rebuild from the deployment folder:
+From your deployment folder, pull and start the configured image:
 
 ```sh
-git pull --ff-only
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
+
+If you pinned `WHATSAPP_MCP_IMAGE` to a version, change it to the new release
+first. Source-based installations use `git pull --ff-only` and
+`docker compose up -d --build` instead.
 
 Re-run the curl installation command to update the host CLI. Docker stores
 account sessions, cached messages, and media in its persistent data volume.

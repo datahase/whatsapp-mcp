@@ -5,12 +5,14 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
+### Added
 - Add an installable host management command: `whatsapp-mcp login`, status, logs,
   start, stop and restart work from any folder without container names.
 - Support standalone and curl-piped CLI installation from GitHub, with HTTPS
   download, optional ref selection and validation before replacing an install.
 
-### Added
 - MCP OAuth authorization-code flow with S256 PKCE, discovery, dynamic public
   client registration, rotating refresh tokens and owner-managed revocation.
 - Browser client approval and OAuth-first connection instructions when a
@@ -21,6 +23,21 @@ before 1.0, minor versions may contain breaking changes.
   Fresh installations start with no preset accounts.
 - Single-use admin sign-in codes via `whatsapp-mcp login-code` (10 minutes).
 - Authenticated client connection screen with endpoint/token copy controls.
+
+### Changed
+- Fresh installations add accounts in the browser instead of preset profiles.
+- Simplified installation and client guides, including Tailscale Serve/Funnel.
+
+### Fixed
+- Keep the WhatsApp socket alive after pairing; separate QR deadlines from the
+  account connection lifetime and reject stale pairing attempts.
+- Preserve the saved link when an offline logout cannot be confirmed, and show
+  connection errors outside the closed confirmation dialog.
+- Redact protocol-library phone/JID logs during pairing and sync.
+
+## [0.2.0] - 2026-10-27
+
+### Added
 - AI providers via their native APIs: Gemini (default), OpenAI, Groq,
   OpenRouter, Anthropic, any OpenAI-compatible API, and dedicated
   speech-to-text services Deepgram, ElevenLabs Scribe and AssemblyAI.
