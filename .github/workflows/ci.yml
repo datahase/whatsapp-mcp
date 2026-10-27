@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'  # weekly: catch whatsmeow API drift and new advisories
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod   # honours the toolchain line
+      - name: Install ffmpeg (test fixtures)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: go mod download && go mod verify
+      - name: gofmt
+        run: test -z "$(gofmt -l cmd internal e2e)" || (gofmt -d cmd internal e2e; exit 1)
+      - run: go vet ./... && go vet -tags=e2e ./e2e/...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - name: unit and integration tests (race)
+        run: go test -race -count=1 -coverprofile=cover.out ./...
+      - run: go tool cover -func=cover.out | tail -1
+      - name: end-to-end (real binary, unpaired accounts)
+        run: go test -tags=e2e -count=1 ./e2e/...
+      - name: whatsmeow API parity
+        run: bash scripts/mdtest-parity.sh
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: third-party license file is current
+        run: bash scripts/third-party-licenses.sh && git diff --exit-code THIRD_PARTY_LICENSES.txt
+
+  container:
+    # Native runners for each architecture: a QEMU build alone does not prove
+    # the image runs. No registry writes and no credentials.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg (fixtures)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        run: docker buildx build --platform ${{ matrix.platform }} --build-arg VERSION=ci --build-arg REVISION=${{ github.sha }} -t whatsapp-mcp:ci --load .
+      - name: Container acceptance
+        run: bash scripts/container-smoke.sh whatsapp-mcp:ci ${{ matrix.platform }}
+      - name: Image size
+        run: docker image ls whatsapp-mcp:ci

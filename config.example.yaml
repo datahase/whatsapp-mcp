@@ -1,0 +1,54 @@
+# whatsapp-mcp configuration. Copy to config.yaml (which is git-ignored).
+# Secrets are never written here; only the paths of mounted secret files.
+
+listen: 0.0.0.0:8765          # inside the container; the host side is set in compose.yaml
+data_dir: /data
+log_level: INFO               # DEBUG, INFO, WARN, ERROR
+
+# Host names/IPs clients use to reach this server, besides localhost.
+# Requests with any other Host or Origin header are rejected.
+allowed_hosts: []
+#  - 192.168.1.20
+#  - my-server.tailnet-name.ts.net
+
+auth:
+  token_file: /run/secrets/mcp_token              # bearer token for MCP and media
+  admin_password_file: /run/secrets/admin_password  # admin/pairing page login
+
+# One entry per WhatsApp account. id is a stable slug (a-z, 0-9, _ or -) and
+# names the data directory; it is not the phone number.
+accounts:
+  - id: personal
+    label: Personal
+    # expected_phone: "15551234567"   # optional safety check, digits with country code
+  - id: second
+    label: Second number
+
+limits:
+  send_min_interval: 45s        # app policy, not an official WhatsApp limit
+  sends_per_hour: 30
+  non_contact_min_interval: 90s
+  non_contact_per_hour: 15
+  max_media_bytes: 33554432     # 32 MiB per file
+  max_inline_bytes: 2097152     # 2 MiB inline image/audio in tool results
+  media_cache_bytes: 536870912  # 512 MiB downloaded-media cache, all accounts
+  staged_upload_ttl: 24h
+  message_cache_bytes: 268435456  # 256 MiB; message storage pauses (never purges) above this
+  max_queued_jobs: 8
+
+# Optional analysis. WhatsApp reading/sending works with this disabled.
+# Personal media always uses the paid key; there is no fallback to a free tier.
+gemini:
+  enabled: false
+  paid_key_file: /run/secrets/gemini_api_key_paid
+  # test_key_file: /run/secrets/gemini_api_key_test   # only for `gemini-smoke -tier test` with non-sensitive fixtures
+  transcribe_model: gemini-3.5-transcribe
+  analysis_model: gemini-3.5-flash-lite
+  quality_model: gemini-3.8-flash      # used only when a tool call sets high_quality=true
+  default_target_language: en
+  daily_audio_minutes: 30              # app allowance, not a provider billing cap
+  daily_requests: 50
+  max_audio_seconds: 600
+  max_output_tokens: 4096
+  request_timeout: 120s
+  wait_for_result: 45s

@@ -1,0 +1,85 @@
+# Release workflow. It publishes ONLY when a maintainer pushes a version tag
+# (v*) or runs it manually; ordinary pushes and PRs never write to a registry.
+# Targets: Docker Hub datahase/whatsapp-mcp and ghcr.io/<owner>/<repo>.
+# Requires repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker
+# Hub access token with write access to the datahase namespace).
+name: Release image
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to build (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version || github.ref }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            docker.io/datahase/whatsapp-mcp
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.VERSION }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=GPL-3.0-or-later AND MIT AND MPL-2.0 AND LGPL-2.1-or-later
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Release notes with digest
+        run: |
+          printf 'docker.io/datahase/whatsapp-mcp@%s\nghcr.io/${{ github.repository }}@%s\n' "${{ steps.build.outputs.digest }}" "${{ steps.build.outputs.digest }}" > image-digest.txt
+          sha256sum image-digest.txt THIRD_PARTY_LICENSES.txt > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          draft: true
+          files: |
+            image-digest.txt
+            SHA256SUMS
+            THIRD_PARTY_LICENSES.txt

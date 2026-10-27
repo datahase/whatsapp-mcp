@@ -1,0 +1,20 @@
+# Build context allowlist: only what the image build needs.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!LICENSE
+!LICENSE-UPSTREAM-MIT
+!THIRD_PARTY_NOTICES.md
+!THIRD_PARTY_LICENSES.txt
+!UPSTREAM.md
+# Never ship tests data that is not needed at runtime, or anything private.
+**/*_test.go
+**/testdata/
+work/
+secrets/
+data/
+.env*
+*.db
+*.db-*

@@ -1,0 +1,45 @@
+# Local research, personal operator context and temporary work.
+/work/
+
+# Credentials and live configuration. Commit examples only.
+.env
+.env.*
+!.env.example
+!.env.*.example
+/secrets/
+/config.yaml
+/config.yml
+/config.local.*
+.mcp.json
+api-key
+api-key-paid
+
+# WhatsApp credentials, message caches, media, transcripts and backups.
+/data/
+/store/
+/media/
+/uploads/
+/transcripts/
+/backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Build outputs and local tooling.
+/bin/
+/dist/
+/coverage/
+cover.out
+*.test
+.DS_Store
+.idea/
+
+# Owner planning and deployment evidence; kept local, not published.
+/docs/IMPLEMENTATION_PLAN.md
+/docs/UPSTREAM_REVIEW.md
+/docs/CODEX_STARTER_PROMPT.md
+/docs/IMPLEMENTATION_STATUS.md

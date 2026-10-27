@@ -1,0 +1,51 @@
+# One application container. Docker picks the image variant for the host
+# (linux/amd64 or linux/arm64); nothing here forces an architecture.
+#
+# Before the first start:  ./scripts/init-secrets.sh  and  cp config.example.yaml config.yaml
+# Host binding defaults to localhost only. To reach it from another device on a
+# private network, set BIND_IP to that host interface's address (for example
+# its Tailscale or LAN IP) and add the same address to allowed_hosts.
+name: whatsapp-mcp
+
+services:
+  whatsapp-mcp:
+    image: ${WHATSAPP_MCP_IMAGE:-datahase/whatsapp-mcp:latest}
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-127.0.0.1}:${HOST_PORT:-8765}:8765"
+    volumes:
+      - whatsapp-mcp-data:/data
+      - ./config.yaml:/config/config.yaml:ro
+    secrets:
+      - mcp_token
+      - admin_password
+      - gemini_api_key_paid
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: ${MEM_LIMIT:-512m}
+    cpus: ${CPUS:-1.0}
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+secrets:
+  mcp_token:
+    file: ./secrets/mcp_token
+  admin_password:
+    file: ./secrets/admin_password
+  # Optional: leave the file empty if Gemini is disabled.
+  gemini_api_key_paid:
+    file: ./secrets/gemini_api_key_paid
+
+volumes:
+  whatsapp-mcp-data:
