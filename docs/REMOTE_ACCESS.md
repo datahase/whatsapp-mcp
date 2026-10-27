@@ -1,5 +1,11 @@
 # Access from another computer
 
+For HTTPS through Tailscale, follow the README's
+[Serve and Funnel walkthrough](../README.md#remote-access-with-tailscale).
+Use Serve for private tailnet access, or Funnel with OAuth for cloud-backed
+ChatGPT/Claude connectors. The direct network-binding option below is useful
+when you already have a private LAN/VPN address or your own TLS proxy.
+
 If the service runs on another machine, run setup and sign-in-code commands
 on that server. Open the admin page in your laptop's browser using the
 server's private address, for example `http://192.168.1.20:8765/admin`.

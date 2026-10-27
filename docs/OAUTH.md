@@ -9,8 +9,11 @@ password. WhatsApp phones remain linked through QR/phone pairing.
 
 ## Server setup
 
-Use a private HTTPS address reachable from your client, through a TLS reverse
-proxy or Tailscale Serve. Set these in the server's `.env`:
+Use an HTTPS address reachable from your client, through a TLS reverse
+proxy or Tailscale. The README includes a
+[Tailscale Serve/Funnel walkthrough](../README.md#remote-access-with-tailscale).
+Use private Serve for local clients or public Funnel for cloud-backed
+connectors. Set these in the server's `.env`:
 
 ```sh
 WHATSAPP_MCP_PUBLIC_URL=https://whatsapp.example.com
