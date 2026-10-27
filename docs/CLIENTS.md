@@ -5,7 +5,7 @@ accepts both pre-2026 clients (`initialize` first) and the 2026-07-28 revision,
 and never issues an `Mcp-Session-Id`. Every request needs:
 
 ```
-Authorization: Bearer <contents of secrets/mcp_token>
+Authorization: Bearer <WHATSAPP_MCP_TOKEN from .env>
 ```
 
 Keep the token in an environment variable or your client's secret store, not
@@ -20,7 +20,7 @@ end to end yet.
 ## Claude Code
 
 ```sh
-export WHATSAPP_MCP_TOKEN=$(cat secrets/mcp_token)
+export WHATSAPP_MCP_TOKEN=$(sed -n "s/^WHATSAPP_MCP_TOKEN=//p" .env)
 claude mcp add --transport http whatsapp http://127.0.0.1:8765/mcp \
   --header "Authorization: Bearer $WHATSAPP_MCP_TOKEN"
 ```

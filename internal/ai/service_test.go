@@ -1,4 +1,4 @@
-package gemini
+package ai
 
 import (
 	"bytes"
@@ -97,7 +97,7 @@ type env struct {
 	mgr  *accounts.Manager
 }
 
-func newEnv(t *testing.T, mutate func(*config.Gemini)) *env {
+func newEnv(t *testing.T, mutate func(*config.AI)) *env {
 	t.Helper()
 	data := t.TempDir()
 	cfg := &config.Config{DataDir: data, LogLevel: "ERROR",
@@ -111,7 +111,7 @@ func newEnv(t *testing.T, mutate func(*config.Gemini)) *env {
 	f := &fakeGemini{interact: func(map[string]any) (int, string) { return 200, okText("hello") }}
 	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
-	g := config.Gemini{TranscribeModel: "gemini-3.5-transcribe", AnalysisModel: "gemini-3.5-flash-lite", QualityModel: "gemini-3.8-flash",
+	g := config.AI{Provider: "gemini", TranscribeModel: "gemini-3.5-transcribe", AnalysisModel: "gemini-3.5-flash-lite", QualityModel: "gemini-3.8-flash",
 		DefaultTargetLanguage: "en", DailyAudioMinutes: 30, DailyRequests: 50, MaxAudioSeconds: 600, MaxOutputTokens: 512,
 		RequestTimeout: 5 * time.Second, WaitForResult: 5 * time.Second}
 	if mutate != nil {
@@ -119,7 +119,7 @@ func newEnv(t *testing.T, mutate func(*config.Gemini)) *env {
 	}
 	c := NewClient(srv.URL, testKey, g.RequestTimeout)
 	c.sleep = func(context.Context, time.Duration) error { return nil }
-	svc, err := newService(g, c, data, 8, client.NewStderrLogger("t", "ERROR", false))
+	svc, err := newService(g, &geminiProvider{c: c}, c, data, 8, client.NewStderrLogger("t", "ERROR", false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestTransientThenSuccessAndNoModelEscalation(t *testing.T) {
 }
 
 func TestDailyAllowanceStopsBeforeDispatch(t *testing.T) {
-	e := newEnv(t, func(g *config.Gemini) { g.DailyRequests = 1 })
+	e := newEnv(t, func(g *config.AI) { g.DailyRequests = 1 })
 	a := e.acct(t, "alpha")
 	ctx := context.Background()
 	v1, _ := e.svc.TranslateText(ctx, a, "hola", Source{}, "en", "", false)
@@ -317,7 +317,7 @@ func TestFailedDeleteIsQueuedForRetry(t *testing.T) {
 }
 
 func TestTimeoutMarksDispatchedFailure(t *testing.T) {
-	e := newEnv(t, func(g *config.Gemini) { g.RequestTimeout = 200 * time.Millisecond })
+	e := newEnv(t, func(g *config.AI) { g.RequestTimeout = 200 * time.Millisecond })
 	e.fake.interact = func(map[string]any) (int, string) {
 		time.Sleep(time.Second)
 		return 200, okText("late")

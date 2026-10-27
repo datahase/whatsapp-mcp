@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
+	"github.com/datahase/whatsapp-mcp/internal/ai"
 	"github.com/datahase/whatsapp-mcp/internal/client"
 	"github.com/datahase/whatsapp-mcp/internal/config"
-	"github.com/datahase/whatsapp-mcp/internal/gemini"
 	"github.com/datahase/whatsapp-mcp/internal/httpapi"
 	mcpsrv "github.com/datahase/whatsapp-mcp/internal/mcp"
 	"github.com/datahase/whatsapp-mcp/internal/security"
@@ -32,11 +32,13 @@ Usage:
   whatsapp-mcp serve        [-config FILE]   run the service
   whatsapp-mcp check-config [-config FILE]   validate configuration and secret files
   whatsapp-mcp healthcheck  [-url URL]       liveness probe used by the container
-  whatsapp-mcp gemini-smoke [-config FILE] -tier paid|test [-audio FILE] [-image FILE]
+  whatsapp-mcp ai-smoke     [-config FILE] -tier paid|test [-audio FILE] [-image FILE]
                                              one provider check with NON-SENSITIVE fixtures only
   whatsapp-mcp -version
 
-FILE defaults to $WHATSAPP_MCP_CONFIG or /config/config.yaml.
+FILE defaults to $WHATSAPP_MCP_CONFIG or /config/config.yaml. The file is
+optional when WHATSAPP_MCP_ACCOUNTS is set; secrets come from environment
+variables (see .env.example).
 Set WHATSAPP_MCP_DEBUG=1 to log unredacted JIDs and message bodies (never in production).
 `
 
@@ -61,7 +63,7 @@ func main() {
 		code = runCheck(args[1:])
 	case "healthcheck":
 		code = runHealth(args[1:])
-	case "gemini-smoke":
+	case "ai-smoke", "gemini-smoke":
 		code = runSmoke(args[1:])
 	case "version":
 		fmt.Printf("whatsapp-mcp %s\n", Version)
@@ -80,45 +82,18 @@ func configFlag(fs *flag.FlagSet) *string {
 	return fs.String("config", def, "config file")
 }
 
-type secrets struct{ token, admin string }
-
-func loadAll(path string) (*config.Config, secrets, error) {
-	cfg, err := config.Load(path)
-	if err != nil {
-		return nil, secrets{}, err
-	}
-	tok, err := config.ReadSecret(cfg.Auth.TokenFile)
-	if err != nil {
-		return nil, secrets{}, fmt.Errorf("auth token: %w", err)
-	}
-	adm, err := config.ReadSecret(cfg.Auth.AdminPasswordFile)
-	if err != nil {
-		return nil, secrets{}, fmt.Errorf("admin password: %w", err)
-	}
-	if tok == adm {
-		return nil, secrets{}, errors.New("the MCP token and the admin password must be different secrets")
-	}
-	return cfg, secrets{tok, adm}, nil
-}
-
 func runCheck(args []string) int {
 	fs := flag.NewFlagSet("check-config", flag.ContinueOnError)
 	path := configFlag(fs)
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	cfg, _, err := loadAll(*path)
+	cfg, err := config.Load(*path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if cfg.Gemini.Enabled {
-		if _, err := config.ReadSecret(cfg.Gemini.PaidKeyFile); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	fmt.Printf("ok: %d account(s), gemini enabled=%v, listen=%s\n", len(cfg.Accounts), cfg.Gemini.Enabled, cfg.Listen)
+	fmt.Printf("ok: %d account(s), analysis enabled=%v (provider %s), listen=%s\n", len(cfg.Accounts), cfg.AI.Enabled, cfg.AI.Provider, cfg.Listen)
 	return 0
 }
 
@@ -147,7 +122,7 @@ func runServe(args []string) int {
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	cfg, sec, err := loadAll(*path)
+	cfg, err := config.Load(*path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config:", err)
 		return 1
@@ -172,25 +147,25 @@ func runServe(args []string) int {
 
 	// Created after the manager so its deferred Close (which stops running
 	// jobs) runs before account stores close.
-	var gem *gemini.Service
-	if cfg.Gemini.Enabled {
-		gem, err = gemini.NewService(cfg.Gemini, filepath.Join(cfg.DataDir, "service"), cfg.Limits.MaxQueuedJobs, client.NewStderrLogger("gemini", cfg.LogLevel, false))
+	var gem *ai.Service
+	if cfg.AI.Enabled {
+		gem, err = ai.NewService(cfg.AI, filepath.Join(cfg.DataDir, "service"), cfg.Limits.MaxQueuedJobs, client.NewStderrLogger("ai", cfg.LogLevel, false))
 		if err != nil {
-			log.Errorf("gemini: %v", err)
+			log.Errorf("analysis: %v", err)
 			return 1
 		}
 		defer gem.Close()
 	}
 
 	m := mcpsrv.NewServer(mgr, gem, cfg.Limits.MaxInlineBytes)
-	h := httpapi.New(httpapi.Config{Token: sec.token, AdminPassword: sec.admin, AllowedHosts: cfg.AllowedHosts,
-		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), Gemini: gem, Version: Version, Log: log})
+	h := httpapi.New(httpapi.Config{Token: cfg.Auth.Token, AdminPassword: cfg.Auth.AdminPassword, AllowedHosts: cfg.AllowedHosts,
+		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), AI: gem, Version: Version, Log: log})
 	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Minute,
 		IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
-	log.Infof("whatsapp-mcp %s listening on %s (MCP /mcp, admin /admin); %d account(s), gemini=%v", Version, cfg.Listen, len(cfg.Accounts), gem != nil)
+	log.Infof("whatsapp-mcp %s listening on %s (MCP /mcp, admin /admin); %d account(s), analysis=%v", Version, cfg.Listen, len(cfg.Accounts), gem != nil)
 
 	select {
 	case <-ctx.Done():

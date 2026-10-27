@@ -13,8 +13,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
+	"github.com/datahase/whatsapp-mcp/internal/ai"
 	"github.com/datahase/whatsapp-mcp/internal/client"
-	"github.com/datahase/whatsapp-mcp/internal/gemini"
 	"github.com/datahase/whatsapp-mcp/internal/store"
 )
 
@@ -147,7 +147,7 @@ func (s *Server) getAccountStatus() {
 		if e != nil {
 			return e, nil
 		}
-		out := map[string]any{"account": acct.Status(), "gemini_enabled": s.gem != nil}
+		out := map[string]any{"account": acct.Status(), "analysis_enabled": s.gem != nil}
 		if s.gem != nil {
 			out["analysis_usage_today"] = s.gem.UsageToday()
 		}
@@ -553,7 +553,7 @@ func (s *Server) getMedia() {
 
 func (s *Server) analysisAccount(id string) (*accounts.Account, *mcp.CallToolResult) {
 	if s.gem == nil {
-		return nil, mcp.NewToolResultError(gemini.ErrDisabled.Error())
+		return nil, mcp.NewToolResultError(ai.ErrDisabled.Error())
 	}
 	return s.account(id)
 }
@@ -569,7 +569,7 @@ type transcribeArgs struct {
 }
 
 func (s *Server) transcribeAudio() {
-	t := mcp.NewTool("transcribe_audio", mcp.WithDescription("Transcribe one voice note or audio item verbatim in its original language and script, using the paid Gemini tier. Optionally translate it; the translation is returned separately and never replaces the transcript. Results are cached. Nothing is sent to WhatsApp."),
+	t := mcp.NewTool("transcribe_audio", mcp.WithDescription("Transcribe one voice note or audio item verbatim in its original language and script, using the configured analysis provider and paid API key. Optionally translate it; the translation is returned separately and never replaces the transcript. Results are cached. Nothing is sent to WhatsApp."),
 		mcp.WithString("account_id", mcp.Required(), mcp.Description(accountDesc)),
 		mcp.WithString("media_id", mcp.Description("Audio media_id in this account")),
 		mcp.WithString("chat_jid", mcp.Description(jidDesc)),
@@ -583,7 +583,7 @@ func (s *Server) transcribeAudio() {
 		if e != nil {
 			return e, nil
 		}
-		v, err := s.gem.Transcribe(ctx, acct, gemini.Source{MediaID: a.MediaID, ChatJID: a.ChatJID, MessageID: a.MessageID}, a.LanguageHint, a.TranslateTo, a.HighQuality)
+		v, err := s.gem.Transcribe(ctx, acct, ai.Source{MediaID: a.MediaID, ChatJID: a.ChatJID, MessageID: a.MessageID}, a.LanguageHint, a.TranslateTo, a.HighQuality)
 		if err != nil {
 			return errResult(err)
 		}
@@ -602,7 +602,7 @@ type translateArgs struct {
 }
 
 func (s *Server) translateText() {
-	t := mcp.NewTool("translate_text", mcp.WithDescription("Translate supplied text, or a cached text message, using the paid Gemini tier. The source text is returned alongside the translation. Nothing is sent to WhatsApp."),
+	t := mcp.NewTool("translate_text", mcp.WithDescription("Translate supplied text, or a cached text message, using the configured analysis provider and paid API key. The source text is returned alongside the translation. Nothing is sent to WhatsApp."),
 		mcp.WithString("account_id", mcp.Required(), mcp.Description(accountDesc)),
 		mcp.WithString("text", mcp.Description("Text to translate (max 20000 characters)")),
 		mcp.WithString("chat_jid", mcp.Description(jidDesc)),
@@ -616,7 +616,7 @@ func (s *Server) translateText() {
 		if e != nil {
 			return e, nil
 		}
-		v, err := s.gem.TranslateText(ctx, acct, a.Text, gemini.Source{ChatJID: a.ChatJID, MessageID: a.MessageID}, a.TargetLanguage, a.SourceLanguage, a.HighQuality)
+		v, err := s.gem.TranslateText(ctx, acct, a.Text, ai.Source{ChatJID: a.ChatJID, MessageID: a.MessageID}, a.TargetLanguage, a.SourceLanguage, a.HighQuality)
 		if err != nil {
 			return errResult(err)
 		}
@@ -635,7 +635,7 @@ type imageArgs struct {
 }
 
 func (s *Server) analyzeImage() {
-	t := mcp.NewTool("analyze_image", mcp.WithDescription("Describe one image, extract its visible text (OCR), or answer a question about it, using the paid Gemini tier. The result names its source media/message. Nothing is sent to WhatsApp."),
+	t := mcp.NewTool("analyze_image", mcp.WithDescription("Describe one image, extract its visible text (OCR), or answer a question about it, using the configured analysis provider and paid API key. The result names its source media/message. Nothing is sent to WhatsApp."),
 		mcp.WithString("account_id", mcp.Required(), mcp.Description(accountDesc)),
 		mcp.WithString("media_id", mcp.Description("Image media_id in this account")),
 		mcp.WithString("chat_jid", mcp.Description(jidDesc)),
@@ -649,7 +649,7 @@ func (s *Server) analyzeImage() {
 		if e != nil {
 			return e, nil
 		}
-		v, err := s.gem.AnalyzeImage(ctx, acct, gemini.Source{MediaID: a.MediaID, ChatJID: a.ChatJID, MessageID: a.MessageID}, a.Mode, a.Question, a.HighQuality)
+		v, err := s.gem.AnalyzeImage(ctx, acct, ai.Source{MediaID: a.MediaID, ChatJID: a.ChatJID, MessageID: a.MessageID}, a.Mode, a.Question, a.HighQuality)
 		if err != nil {
 			return errResult(err)
 		}

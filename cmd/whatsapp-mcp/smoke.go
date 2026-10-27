@@ -8,17 +8,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/datahase/whatsapp-mcp/internal/ai"
 	"github.com/datahase/whatsapp-mcp/internal/config"
-	"github.com/datahase/whatsapp-mcp/internal/gemini"
 )
 
 // runSmoke checks provider access with local fixture files. It is the only
-// code path that may use the test (free) key, and it never reads WhatsApp
-// data.
+// code path that may use the test key (AI_TEST_API_KEY), and it never reads
+// WhatsApp data.
 func runSmoke(args []string) int {
-	fs := flag.NewFlagSet("gemini-smoke", flag.ContinueOnError)
+	fs := flag.NewFlagSet("ai-smoke", flag.ContinueOnError)
 	path := configFlag(fs)
-	tier := fs.String("tier", "", "paid or test (required)")
+	tier := fs.String("tier", "", "paid (AI_API_KEY) or test (AI_TEST_API_KEY); required")
 	audio := fs.String("audio", "", "non-sensitive audio fixture")
 	image := fs.String("image", "", "non-sensitive image fixture")
 	target := fs.String("translate-to", "en", "translation target for the audio transcript ('' to skip)")
@@ -34,24 +34,23 @@ func runSmoke(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	var keyFile string
+	var key, tkey string
 	switch *tier {
 	case "paid":
-		keyFile = cfg.Gemini.PaidKeyFile
+		key, tkey = cfg.AI.APIKey, cfg.AI.TranscribeAPIKey
 	case "test":
-		keyFile = cfg.Gemini.TestKeyFile
+		key, tkey = cfg.AI.TestAPIKey, cfg.AI.TestAPIKey
 	default:
 		fmt.Fprintln(os.Stderr, "-tier must be paid or test")
 		return 2
 	}
-	key, err := config.ReadSecret(keyFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if key == "" {
+		fmt.Fprintf(os.Stderr, "no key for tier %s (set the provider key, e.g. GEMINI_API_KEY, or AI_TEST_API_KEY)\n", *tier)
 		return 1
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	out, err := gemini.Smoke(ctx, cfg.Gemini.BaseURL, key, cfg.Gemini.TranscribeModel, cfg.Gemini.AnalysisModel, *audio, *image, *target)
+	out, err := ai.Smoke(ctx, cfg.AI, key, tkey, *audio, *image, *target)
 	if out == nil {
 		out = map[string]any{}
 	}

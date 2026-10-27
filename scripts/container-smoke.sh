@@ -21,11 +21,11 @@ trap cleanup EXIT
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; dc logs --no-color | tail -40; exit 1; }
 
-# Config and secrets, as a user would create them.
-cp "$REPO/config.example.yaml" "$WORK/config.yaml"
-(cd "$WORK" && mkdir -p scripts && cp "$REPO/scripts/init-secrets.sh" scripts/ && sh scripts/init-secrets.sh >/dev/null 2>&1)
-chmod 0644 "$WORK"/secrets/* 2>/dev/null || true   # throwaway test secrets (already chowned on Linux)
-TOKEN=$(cat "$WORK/secrets/mcp_token")
+# Settings as a user would create them: only a .env file, no config file.
+cp "$REPO/.env.example" "$WORK/.env.example"
+(cd "$WORK" && mkdir -p scripts && cp "$REPO/scripts/init-env.sh" scripts/ && sh scripts/init-env.sh >/dev/null)
+printf 'WHATSAPP_MCP_ACCOUNTS=personal:Personal,second:Second\n' >> "$WORK/.env"
+TOKEN=$(sed -n "s/^WHATSAPP_MCP_TOKEN=//p" "$WORK/.env")
 AUTH="Authorization: Bearer $TOKEN"
 BASE="http://127.0.0.1:$PORT"
 
@@ -107,6 +107,8 @@ docker cp "$F/song.mp3" "$CID:/data/accounts/personal/media/work/in.mp3" >/dev/n
 docker exec "$CID" ffmpeg -nostdin -hide_banner -loglevel error -i /data/accounts/personal/media/work/in.mp3 -vn -map_metadata -1 -ac 1 -ar 48000 -c:a libopus -b:a 32k -application voip -f ogg -y /data/accounts/personal/media/work/out.ogg || fail "convert"
 codec=$(docker exec "$CID" ffprobe -v error -of csv=p=0 -show_entries stream=codec_name /data/accounts/personal/media/work/out.ogg)
 [ "$codec" = opus ] && pass "MP3 -> Ogg/Opus conversion inside image" || fail "codec $codec"
+docker exec "$CID" ffmpeg -nostdin -hide_banner -loglevel error -i /data/accounts/personal/media/work/out.ogg -ac 1 -ar 16000 -c:a pcm_s16le -f wav -y /data/accounts/personal/media/work/out.wav || fail "wav"
+[ "$(docker exec "$CID" ffprobe -v error -of csv=p=0 -show_entries stream=codec_name /data/accounts/personal/media/work/out.wav)" = pcm_s16le ] && pass "Opus -> WAV conversion inside image (for chat-audio models)" || fail "wav codec"
 
 idle=$(docker stats --no-stream --format '{{.MemUsage}} cpu={{.CPUPerc}}' "$CID"); pass "resource snapshot: $idle"
 

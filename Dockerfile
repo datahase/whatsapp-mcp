@@ -65,7 +65,7 @@ RUN set -eux; \
       --enable-demuxer=ogg,mov,mp3,wav,matroska,flac,aac,image_webp_pipe,image_png_pipe,image_jpeg_pipe,gif \
       --enable-parser=opus,vorbis,mpegaudio,aac,flac,h264,png,mjpeg,webp,gif \
       --enable-decoder=opus,vorbis,mp3float,mp3,aac,flac,alac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8 \
-      --enable-encoder=libopus --enable-muxer=ogg \
+      --enable-encoder=libopus,pcm_s16le --enable-muxer=ogg,wav \
       --enable-filter=abuffer,abuffersink,aresample,aformat,anull,atrim; \
     make -j"$(nproc)"; make install; \
     install -D -m 0644 COPYING.LGPLv2.1 /opt/ffmpeg/share/licenses/COPYING.LGPLv2.1

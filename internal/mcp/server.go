@@ -11,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
-	"github.com/datahase/whatsapp-mcp/internal/gemini"
+	"github.com/datahase/whatsapp-mcp/internal/ai"
 )
 
 // Version is reported as serverInfo.version.
@@ -20,13 +20,13 @@ var Version = "dev"
 // Server holds the MCP server and the services its tools use.
 type Server struct {
 	mgr       *accounts.Manager
-	gem       *gemini.Service // nil when Gemini is disabled
+	gem       *ai.Service // nil when analysis is disabled
 	mcp       *server.MCPServer
 	maxInline int64
 }
 
 // NewServer registers the tool allowlist. gem may be nil.
-func NewServer(mgr *accounts.Manager, gem *gemini.Service, maxInline int64) *Server {
+func NewServer(mgr *accounts.Manager, gem *ai.Service, maxInline int64) *Server {
 	s := &Server{mgr: mgr, gem: gem, maxInline: maxInline,
 		mcp: server.NewMCPServer("whatsapp-mcp", Version, server.WithToolCapabilities(false),
 			server.WithInstructions(instructions))}

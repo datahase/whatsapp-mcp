@@ -21,7 +21,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
-	"github.com/datahase/whatsapp-mcp/internal/gemini"
+	"github.com/datahase/whatsapp-mcp/internal/ai"
 	wamcp "github.com/datahase/whatsapp-mcp/internal/mcp"
 )
 
@@ -33,7 +33,7 @@ type Config struct {
 	MaxUpload     int64
 	Manager       *accounts.Manager
 	MCP           http.Handler
-	Gemini        *gemini.Service
+	AI            *ai.Service
 	Version       string
 	Log           waLog.Logger
 }
@@ -211,10 +211,10 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	out := map[string]any{"version": s.cfg.Version, "accounts": s.cfg.Manager.Statuses(), "gemini_enabled": s.cfg.Gemini != nil}
-	if s.cfg.Gemini != nil {
-		out["analysis_usage_today"] = s.cfg.Gemini.UsageToday()
-		out["pending_provider_cleanups"] = s.cfg.Gemini.PendingCleanups()
+	out := map[string]any{"version": s.cfg.Version, "accounts": s.cfg.Manager.Statuses(), "analysis_enabled": s.cfg.AI != nil}
+	if s.cfg.AI != nil {
+		out["analysis_usage_today"] = s.cfg.AI.UsageToday()
+		out["pending_provider_cleanups"] = s.cfg.AI.PendingCleanups()
 	}
 	writeJSON(w, http.StatusOK, out)
 }

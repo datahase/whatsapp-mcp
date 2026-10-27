@@ -1,10 +1,9 @@
-package gemini
+package ai
 
 import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,15 +26,18 @@ import (
 // PromptVersion is part of every cache key; bump it when prompts change.
 const PromptVersion = "v1"
 
-// TierPaid is the only tier the MCP service uses for personal media.
+// TierPaid is the only tier the MCP service uses for personal media: the
+// configured AI_API_KEY with paid (non-":free") models.
 const TierPaid = "paid"
 
-// ErrDisabled is returned when Gemini is not configured.
-var ErrDisabled = errors.New("analysis is not configured on this server (gemini.enabled=false); WhatsApp tools are unaffected")
+// ErrDisabled is returned when analysis is not configured.
+var ErrDisabled = errors.New("analysis is not configured on this server (AI_ENABLED is not true); WhatsApp tools are unaffected")
 
 // Service runs analysis jobs. It is safe for concurrent use.
 type Service struct {
-	cfg    config.Gemini
+	cfg    config.AI
+	p      Provider // translation and image analysis
+	tp     Provider // transcription
 	client *Client
 	ledger *sql.DB
 	log    waLog.Logger
@@ -51,21 +53,38 @@ type Service struct {
 	now     func() time.Time
 }
 
-// NewService opens the usage ledger and builds the paid-key client.
-func NewService(cfg config.Gemini, dataDir string, maxQueued int, log waLog.Logger) (*Service, error) {
-	key, err := config.ReadSecret(cfg.PaidKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("gemini paid key: %w", err)
+// NewService opens the usage ledger and builds the configured provider with
+// the personal-media key.
+func NewService(cfg config.AI, dataDir string, maxQueued int, log waLog.Logger) (*Service, error) {
+	if cfg.APIKey == "" {
+		return nil, errors.New("AI_API_KEY is required when AI_ENABLED=true")
 	}
-	return newService(cfg, NewClient(cfg.BaseURL, key, cfg.RequestTimeout), dataDir, maxQueued, log)
+	s := &Service{}
+	p, c, err := newProvider(cfg.Provider, cfg.BaseURL, cfg.APIKey, cfg.TranscribeMethod, cfg.RequestTimeout, s.recordCleanup)
+	if err != nil {
+		return nil, err
+	}
+	tp := p
+	if cfg.TranscribeProvider != cfg.Provider {
+		if tp, _, err = newProvider(cfg.TranscribeProvider, cfg.TranscribeBaseURL, cfg.TranscribeAPIKey, cfg.TranscribeMethod, cfg.RequestTimeout, s.recordCleanup); err != nil {
+			return nil, err
+		}
+	}
+	s.tp = tp
+	return s.init(cfg, p, c, dataDir, maxQueued, log)
 }
 
-func newService(cfg config.Gemini, c *Client, dataDir string, maxQueued int, log waLog.Logger) (*Service, error) {
+// newService builds a service around an explicit provider (tests).
+func newService(cfg config.AI, p Provider, c *Client, dataDir string, maxQueued int, log waLog.Logger) (*Service, error) {
+	return (&Service{}).init(cfg, p, c, dataDir, maxQueued, log)
+}
+
+func (s *Service) init(cfg config.AI, p Provider, c *Client, dataDir string, maxQueued int, log waLog.Logger) (*Service, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
 	}
-	p := filepath.Join(dataDir, "service.db")
-	db, err := sql.Open("sqlite3", "file:"+p+"?_journal_mode=WAL&_busy_timeout=5000")
+	path := filepath.Join(dataDir, "service.db")
+	db, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +92,34 @@ func newService(cfg config.Gemini, c *Client, dataDir string, maxQueued int, log
 		db.Close()
 		return nil, fmt.Errorf("usage ledger: %w", err)
 	}
-	_ = store.ChmodBestEffort(p, 0o600)
+	_ = store.ChmodBestEffort(path, 0o600)
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{cfg: cfg, client: c, ledger: db, log: log, worker: make(chan struct{}, 1),
-		maxQ: int32(maxQueued), ctx: ctx, cancel: cancel, now: time.Now}
-	s.wg.Add(1)
-	go func() { defer s.wg.Done(); s.retryCleanups() }()
+	s.cfg, s.p, s.client, s.ledger, s.log = cfg, p, c, db, log
+	if s.tp == nil {
+		s.tp = p
+	}
+	s.worker, s.maxQ, s.ctx, s.cancel, s.now = make(chan struct{}, 1), int32(maxQueued), ctx, cancel, time.Now
+	if g, ok := s.tp.(*geminiProvider); ok {
+		if g.onCleanupFail == nil {
+			g.onCleanupFail = s.recordCleanup
+		}
+		s.client = g.c // provider-file cleanup retries go to the transcriber
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.retryCleanups() }()
+	}
 	return s, nil
 }
+
+// redact removes every configured key from a message.
+func (s *Service) redact(m string) string { return s.tp.Redact(s.p.Redact(m)) }
+
+func (s *Service) recordCleanup(name, msg string) {
+	s.log.Warnf("provider file cleanup failed; queued for retry: %s", msg)
+	_, _ = s.ledger.Exec("INSERT OR IGNORE INTO provider_cleanup(file_name, created_at, last_error) VALUES (?, ?, ?)", name, s.now().UTC(), msg)
+}
+
+// ProviderName reports the analysis provider.
+func (s *Service) ProviderName() string { return s.cfg.Provider }
 
 const ledgerSchema = `
 CREATE TABLE IF NOT EXISTS usage (
@@ -267,7 +306,7 @@ func (s *Service) execute(a *accounts.Account, st *store.Store, j *store.Job, sp
 	result, usage, err := spec.run(ctx, j, markDispatched)
 	if err != nil {
 		s.finishUsage(usageID, usage, dispatched, "failed")
-		_ = st.UpdateJob(j.ID, store.JobFailed, "", s.client.redact(err.Error()), dispatched)
+		_ = st.UpdateJob(j.ID, store.JobFailed, "", s.redact(err.Error()), dispatched)
 		return
 	}
 	b, _ := json.Marshal(result)
@@ -316,29 +355,9 @@ func (s *Service) UsageToday() map[string]any {
 	var reqs, in, out int
 	var secs float64
 	_ = s.ledger.QueryRow("SELECT COALESCE(SUM(requests),0), COALESCE(SUM(audio_seconds),0), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0) FROM usage WHERE day = ?", day).Scan(&reqs, &secs, &in, &out)
-	return map[string]any{"day_utc": day, "requests": reqs, "request_limit": s.cfg.DailyRequests,
+	return map[string]any{"provider": s.cfg.Provider, "transcribe_provider": s.cfg.TranscribeProvider, "day_utc": day, "requests": reqs, "request_limit": s.cfg.DailyRequests,
 		"audio_minutes": secs / 60, "audio_minute_limit": s.cfg.DailyAudioMinutes, "input_tokens": in, "output_tokens": out,
 		"note": "app-side allowance and provider-reported tokens; not a billing statement or provider-enforced cap"}
-}
-
-// uploadThenDelete uploads data, runs fn with the file, and always deletes
-// the provider copy. Failed deletions are queued for bounded retry.
-func (s *Service) uploadThenDelete(ctx context.Context, data []byte, mime string, fn func(f *File) error) error {
-	f, err := s.client.UploadFile(ctx, data, mime)
-	if f != nil && f.Name != "" {
-		defer func() {
-			dctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if derr := s.client.DeleteFile(dctx, f.Name); derr != nil {
-				s.log.Warnf("provider file cleanup failed; queued for retry: %v", derr)
-				_, _ = s.ledger.Exec("INSERT OR IGNORE INTO provider_cleanup(file_name, created_at, last_error) VALUES (?, ?, ?)", f.Name, s.now().UTC(), s.client.redact(derr.Error()))
-			}
-		}()
-	}
-	if err != nil {
-		return err
-	}
-	return fn(f)
 }
 
 // retryCleanups retries failed provider deletions at startup and hourly,
@@ -383,7 +402,7 @@ func (s *Service) PendingCleanups() int {
 }
 
 func (s *Service) pickModel(base string, quality bool) string {
-	if quality {
+	if quality && s.cfg.QualityModel != "" {
 		return s.cfg.QualityModel
 	}
 	return base
@@ -433,28 +452,20 @@ func (s *Service) Transcribe(ctx context.Context, a *accounts.Account, src Sourc
 	return s.submit(ctx, a, jobSpec{task: "transcribe", model: transcribeModel, src: src, contentHash: obj.SHA256, params: params,
 		audioSeconds: secs, requests: requests,
 		run: func(ctx context.Context, j *store.Job, dispatched func()) (any, Usage, error) {
-			data, err := os.ReadFile(path)
+			audioPath, mime := path, strings.TrimSpace(strings.SplitN(obj.MIME, ";", 2)[0])
+			if s.cfg.AudioFormat == "wav" {
+				wav, err := media.ConvertToWAV(ctx, path, a.WorkDir())
+				if err != nil {
+					return nil, Usage{}, err
+				}
+				defer os.Remove(wav)
+				audioPath, mime = wav, "audio/wav"
+			}
+			data, err := os.ReadFile(audioPath)
 			if err != nil {
 				return nil, Usage{}, err
 			}
-			mime := strings.TrimSpace(strings.SplitN(obj.MIME, ";", 2)[0])
-			tc := map[string]any{"mode": map[string]string{"type": "verbatim"}}
-			if languageHint != "" {
-				tc["language_codes"] = []string{languageHint}
-			}
-			var transcript string
-			var usage Usage
-			err = s.uploadThenDelete(ctx, data, mime, func(f *File) error {
-				dispatched()
-				resp, err := s.client.Interact(ctx, Request{Model: transcribeModel,
-					Input:            []Part{{Type: "audio", URI: f.URI, MimeType: mime}},
-					GenerationConfig: map[string]any{"transcription_config": tc}})
-				if err != nil {
-					return err
-				}
-				transcript, usage = resp.Text, resp.Usage
-				return nil
-			})
+			transcript, usage, err := s.tp.Transcribe(ctx, transcribeModel, data, mime, languageHint, dispatched)
 			if err != nil {
 				return nil, usage, err
 			}
@@ -470,7 +481,7 @@ func (s *Service) Transcribe(ctx context.Context, a *accounts.Account, src Sourc
 				usage.InputTokens += u2.InputTokens
 				usage.OutputTokens += u2.OutputTokens
 				if err != nil {
-					res["translation_error"] = s.client.redact(err.Error())
+					res["translation_error"] = s.redact(err.Error())
 				} else {
 					res["detected_language"] = tr.SourceLanguage
 					res["translation"] = map[string]any{"target_language": target, "text": tr.Translation, "model": translateModel}
@@ -495,28 +506,27 @@ func (s *Service) translate(ctx context.Context, model, text, target, sourceHint
 		prompt += "Source language hint: " + sourceHint + "\n"
 	}
 	prompt += "Text to translate:\n<<<\n" + text + "\n>>>"
-	resp, err := s.client.Interact(ctx, Request{Model: model, SystemInstruction: translateSystem, ResponseFormat: translationFormat,
-		Input:            []Part{{Type: "text", Text: prompt}},
-		GenerationConfig: map[string]any{"max_output_tokens": s.cfg.MaxOutputTokens, "temperature": 0.2}})
+	text, u, err := s.p.Generate(ctx, model, GenRequest{System: translateSystem, Prompt: prompt, JSONSchema: translationSchema,
+		MaxTokens: s.cfg.MaxOutputTokens, Temperature: 0.2}, func() {})
 	if err != nil {
 		return nil, Usage{}, err
 	}
 	var tr translation
-	if err := json.Unmarshal([]byte(stripFence(resp.Text)), &tr); err != nil || strings.TrimSpace(tr.Translation) == "" {
-		return nil, resp.Usage, &Error{Kind: KindInvalidOutput, Message: "translation response was not the expected JSON"}
+	if err := json.Unmarshal([]byte(stripFence(text)), &tr); err != nil || strings.TrimSpace(tr.Translation) == "" {
+		return nil, u, &Error{Kind: KindInvalidOutput, Message: "translation response was not the expected JSON"}
 	}
-	return &tr, resp.Usage, nil
+	return &tr, u, nil
 }
 
-// translationFormat asks the Interactions API for schema-constrained JSON.
-var translationFormat = map[string]any{"type": "text", "mime_type": "application/json", "schema": map[string]any{
+// translationSchema constrains translation output where the provider supports it.
+var translationSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"source_language": map[string]any{"type": "string"},
 		"translation":     map[string]any{"type": "string"},
 	},
 	"required": []string{"source_language", "translation"},
-}}
+}
 
 func stripFence(s string) string {
 	s = strings.TrimSpace(s)
@@ -612,16 +622,14 @@ func (s *Service) AnalyzeImage(ctx context.Context, a *accounts.Account, src Sou
 			if err != nil {
 				return nil, Usage{}, err
 			}
-			dispatched()
-			resp, err := s.client.Interact(ctx, Request{Model: model, SystemInstruction: imageSystem,
-				Input:            []Part{{Type: "text", Text: prompt}, {Type: "image", Data: base64.StdEncoding.EncodeToString(data), MimeType: obj.MIME}},
-				GenerationConfig: map[string]any{"max_output_tokens": s.cfg.MaxOutputTokens, "temperature": 0.2}})
+			text, u, err := s.p.Generate(ctx, model, GenRequest{System: imageSystem, Prompt: prompt, Image: data, ImageMIME: obj.MIME,
+				MaxTokens: s.cfg.MaxOutputTokens, Temperature: 0.2}, dispatched)
 			if err != nil {
 				return nil, Usage{}, err
 			}
-			if resp.Text == "" {
-				return nil, resp.Usage, &Error{Kind: KindInvalidOutput, Message: "empty response"}
+			if text == "" {
+				return nil, u, &Error{Kind: KindInvalidOutput, Message: "empty response"}
 			}
-			return map[string]any{"mode": mode, "question": question, "answer": resp.Text, "model": model}, resp.Usage, nil
+			return map[string]any{"mode": mode, "question": question, "answer": text, "model": model}, u, nil
 		}})
 }

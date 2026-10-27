@@ -5,6 +5,24 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+- AI providers via their native APIs: Gemini (default), OpenAI, Groq,
+  OpenRouter, Anthropic, any OpenAI-compatible API, and dedicated
+  speech-to-text services Deepgram, ElevenLabs Scribe and AssemblyAI.
+- Separate transcription provider (`AI_TRANSCRIBE_PROVIDER`), with its own key.
+- Model IDs configurable through `AI_TRANSCRIBE_MODEL`, `AI_MODEL`,
+  `AI_QUALITY_MODEL`; `:free` model IDs refused unless explicitly allowed.
+- Optional WAV conversion for providers that do not accept Ogg/Opus.
+
+### Changed
+- Configuration and secrets come from environment variables (`.env` with
+  Compose). `config.yaml` is optional; `*_FILE` variables still work.
+- `scripts/init-env.sh` replaces `scripts/init-secrets.sh`.
+- Config section `gemini:` renamed `ai:` (the old name is still accepted).
+- `gemini-smoke` renamed `ai-smoke` (old name still works).
+
+## [0.1.0] - 2026-10-27
+
 ### Changed
 - License: GPL-3.0-or-later (the binary links GPL-3.0 libsignal); upstream MIT
   notice retained in LICENSE-UPSTREAM-MIT.

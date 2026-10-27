@@ -136,3 +136,17 @@ func TestConvertWritesInsideWorkDirAndTruncates(t *testing.T) {
 		t.Fatalf("max duration not enforced: %dms", info.DurationMS)
 	}
 }
+
+func TestConvertToWAVForAnalysis(t *testing.T) {
+	needFFmpeg(t)
+	opus := ffmpegFixture(t, "a.ogg", "-f", "lavfi", "-i", "sine=duration=2", "-c:a", "libopus")
+	work := filepath.Join(t.TempDir(), "work")
+	out, err := ConvertToWAV(context.Background(), opus, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := Detect(context.Background(), out, "")
+	if err != nil || info.MIME != "audio/wav" || filepath.Dir(out) != work {
+		t.Fatalf("%+v %v %s", info, err, out)
+	}
+}

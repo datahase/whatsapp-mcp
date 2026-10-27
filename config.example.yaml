@@ -11,9 +11,12 @@ allowed_hosts: []
 #  - 192.168.1.20
 #  - my-server.tailnet-name.ts.net
 
-auth:
-  token_file: /run/secrets/mcp_token              # bearer token for MCP and media
-  admin_password_file: /run/secrets/admin_password  # admin/pairing page login
+# Secrets come from environment variables (WHATSAPP_MCP_TOKEN,
+# WHATSAPP_MCP_ADMIN_PASSWORD, AI_API_KEY; see .env.example). To use files
+# instead (e.g. Docker secrets), set WHATSAPP_MCP_TOKEN_FILE etc., or:
+# auth:
+#   token_file: /run/secrets/mcp_token
+#   admin_password_file: /run/secrets/admin_password
 
 # One entry per WhatsApp account. id is a stable slug (a-z, 0-9, _ or -) and
 # names the data directory; it is not the phone number.
@@ -36,15 +39,23 @@ limits:
   message_cache_bytes: 268435456  # 256 MiB; message storage pauses (never purges) above this
   max_queued_jobs: 8
 
-# Optional analysis. WhatsApp reading/sending works with this disabled.
-# Personal media always uses the paid key; there is no fallback to a free tier.
-gemini:
+# Optional analysis. Environment variables (AI_*) override these values.
+# WhatsApp reading/sending works with this disabled. Personal media always
+# uses api key below/AI_API_KEY; there is no fallback to a free tier.
+ai:
   enabled: false
-  paid_key_file: /run/secrets/gemini_api_key_paid
-  # test_key_file: /run/secrets/gemini_api_key_test   # only for `gemini-smoke -tier test` with non-sensitive fixtures
+  provider: gemini            # gemini | openai | groq | openrouter | anthropic | openai_compatible
+  # transcribe_provider: deepgram   # default: same as provider; also deepgram | elevenlabs | assemblyai
+  # base_url: ""              # per-provider default; required for openai_compatible
+  # transcribe_base_url: ""
+  # api_key_file: /run/secrets/ai_api_key   # alternative to the <PROVIDER>_API_KEY variables
   transcribe_model: gemini-3.5-transcribe
   analysis_model: gemini-3.5-flash-lite
   quality_model: gemini-3.8-flash      # used only when a tool call sets high_quality=true
+  # transcribe_method: chat            # OpenAI-shaped providers: chat or audio_transcriptions
+  # audio_format: original             # chat transcription defaults to wav
+  # allow_free_models: false           # ":free" model IDs are refused for personal media
+  # test_key_file: /run/secrets/ai_test_key  # only for `ai-smoke -tier test` with non-sensitive fixtures
   default_target_language: en
   daily_audio_minutes: 30              # app allowance, not a provider billing cap
   daily_requests: 50

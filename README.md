@@ -4,8 +4,8 @@ A small self-hosted [MCP](https://modelcontextprotocol.io) server for **several
 personal WhatsApp accounts** in one container. An MCP client (Claude Code,
 Codex and others) can read and search chats, send text, images, video,
 ordinary audio and playable voice notes, fetch received media to a remote
-laptop, and optionally ask Gemini to transcribe or translate voice notes and
-describe or read text in images.
+laptop, and optionally transcribe or translate voice notes and describe or
+read text in images with the AI provider you choose (Gemini by default).
 
 > **Unofficial software.** It uses the reverse-engineered WhatsApp
 > linked-device protocol through [whatsmeow](https://github.com/tulir/whatsmeow).
@@ -30,12 +30,15 @@ describe or read text in images.
 - **Remote media.** Upload a file from your laptop over authenticated HTTP,
   get an account-bound `media_id`, then send it. Received media is downloaded
   only when asked and comes back as a download URL plus small inline previews.
-- **Optional Gemini analysis** (direct HTTPS calls, no extra service):
-  verbatim transcription in the original language and script, a separate
-  translation, translation of text, image description/OCR/questions. Results
-  are cached per account and bounded by daily allowances. Personal media
-  always uses your **paid** key; there is no silent fallback to a free tier
-  and no silent model upgrade. Basic WhatsApp features work without Gemini.
+- **Optional AI analysis** (direct calls to each provider's native API, no
+  SDKs or extra services): verbatim transcription in the original language
+  and script, a separate translation, translation of text, image
+  description/OCR/questions. Gemini is the default; OpenAI, Groq, OpenRouter,
+  Anthropic and dedicated speech-to-text services (Deepgram, ElevenLabs,
+  AssemblyAI) are built in. Results are cached per account and bounded by
+  daily allowances. Use paid keys for personal media: there is no silent
+  fallback to a free tier and no silent model upgrade. Basic WhatsApp
+  features work with AI disabled.
 - **Small footprint.** One Go binary plus a minimal FFmpeg/FFprobe build in a
   Debian slim image (about 114 MB amd64 / 135 MB arm64 uncompressed). No
   browser, Node, Python, local models or GPU.
@@ -65,14 +68,19 @@ storage, and outbound internet access.
 
 ```sh
 git clone https://github.com/datahase/whatsapp-mcp && cd whatsapp-mcp
-./scripts/init-secrets.sh            # random MCP token + admin password in ./secrets
-cp config.example.yaml config.yaml   # edit account ids/labels
-docker compose up -d --build
+./scripts/init-env.sh     # creates .env with a random MCP token and admin password
+$EDITOR .env              # set WHATSAPP_MCP_ACCOUNTS (and AI settings, optional)
+docker compose up -d      # pulls datahase/whatsapp-mcp; add --build to build locally
 ```
+
+All settings and keys live in `.env`, which Compose loads into the container.
+There is no secrets folder and no required config file. `.env.example`
+documents every variable. Keep `.env` private (`init-env.sh` creates it
+with mode 600).
 
 The port is published on **127.0.0.1:8765** only. Open
 <http://127.0.0.1:8765/admin>, sign in with the contents of
-`secrets/admin_password`, choose an account and start pairing. On the phone, go to
+`WHATSAPP_MCP_ADMIN_PASSWORD` from `.env`, choose an account and start pairing. On the phone, go to
 WhatsApp → Settings → Linked devices → Link a device, and scan the QR code
 (or request a pairing code). Pair each account the same way. A pairing attempt
 times out after three minutes; nothing re-pairs automatically.
@@ -80,16 +88,11 @@ times out after three minutes; nothing re-pairs automatically.
 ### Access from another device
 
 To use the server from a laptop on a private network (LAN, VPN or
-Tailscale), publish it on that interface and allow that address:
+Tailscale), publish it on that interface and allow that address in `.env`:
 
 ```sh
-echo "BIND_IP=192.168.1.20" > .env        # the server's address on that network
-```
-
-```yaml
-# config.yaml
-allowed_hosts:
-  - 192.168.1.20
+BIND_IP=192.168.1.20                  # the server's address on that network
+WHATSAPP_MCP_ALLOWED_HOSTS=192.168.1.20
 ```
 
 Then run `docker compose up -d`. Requests whose `Host` or `Origin` header is
@@ -101,7 +104,7 @@ the internet without TLS and an access-control layer.
 ## Connect an MCP client
 
 The endpoint is `http://<host>:8765/mcp` (Streamable HTTP, stateless). Every
-request needs `Authorization: Bearer <contents of secrets/mcp_token>`.
+request needs `Authorization: Bearer <WHATSAPP_MCP_TOKEN from .env>`.
 Examples are in [docs/CLIENTS.md](docs/CLIENTS.md).
 
 ### Sending a local file
@@ -139,26 +142,73 @@ the same header.
 Reading never marks messages as read, sends presence, or replies. Message
 content and model output are treated as untrusted and never authorize a send.
 
-## Gemini (optional)
+## AI providers (optional)
 
-1. Put your **paid** Gemini API key in `secrets/gemini_api_key_paid`.
-2. In `config.yaml`, set `gemini.enabled: true`.
-3. Restart: `docker compose up -d`.
+Turn analysis on in `.env` with `AI_ENABLED=true`, choose providers, set the
+matching key, then run `docker compose up -d`. Two roles can use different
+providers:
 
-Defaults: `gemini-3.5-transcribe` for transcripts, `gemini-3.5-flash-lite` for
-translation and images, and `gemini-3.8-flash` only when a call sets
-`high_quality: true`. App allowances: 30 audio minutes and 50 requests per UTC
-day, 10 minutes per note. These are local limits, not a provider billing cap.
-Uploaded audio is deleted from the provider after each job (deletion does not
-guarantee zero provider-side retention). Calls may wait up to 45 seconds; longer
-jobs return a `job_id` for `get_analysis_job`.
+- `AI_PROVIDER`: translation and image analysis.
+- `AI_TRANSCRIBE_PROVIDER`: voice-note transcription (default: same as
+  `AI_PROVIDER`).
 
-To check provider access without any WhatsApp data, run the fixture command
-with a non-sensitive file:
+| Provider | Key variable | Transcription | Translation / images | Default models (transcribe / analysis) |
+| --- | --- | --- | --- | --- |
+| `gemini` (default) | `GEMINI_API_KEY` | Yes (native) | Yes | `gemini-3.5-transcribe` / `gemini-3.5-flash-lite`, quality `gemini-3.8-flash` |
+| `openai` | `OPENAI_API_KEY` | Yes (`/audio/transcriptions`) | Yes | `gpt-4o-transcribe` / set `AI_MODEL` |
+| `groq` | `GROQ_API_KEY` | Yes (`/audio/transcriptions`) | Yes | `whisper-large-v3` / set `AI_MODEL` |
+| `openrouter` | `OPENROUTER_API_KEY` | Yes (audio-capable chat models) | Yes | set both |
+| `anthropic` | `ANTHROPIC_API_KEY` | No: pair with a transcription provider | Yes | — / `claude-opus-5-5` (`claude-haiku-5-5` is cheaper) |
+| `deepgram` | `DEEPGRAM_API_KEY` | Yes (speech-to-text only) | No | `nova-3` |
+| `elevenlabs` | `ELEVENLABS_API_KEY` | Yes (speech-to-text only) | No | `scribe_v2` |
+| `assemblyai` | `ASSEMBLYAI_API_KEY` | Yes (speech-to-text only; transcript deleted after use) | No | `universal-3-5-pro` |
+| `openai_compatible` | `AI_API_KEY` | Configurable | Yes | set `AI_BASE_URL` and both models |
+
+Examples for `.env`:
+
+```sh
+# Gemini for everything (default models)
+AI_ENABLED=true
+GEMINI_API_KEY=...
+
+# Claude for translation and images, Deepgram for transcription
+AI_ENABLED=true
+AI_PROVIDER=anthropic
+AI_TRANSCRIBE_PROVIDER=deepgram
+ANTHROPIC_API_KEY=...
+DEEPGRAM_API_KEY=...
+
+# OpenRouter for everything
+AI_ENABLED=true
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=...
+AI_TRANSCRIBE_MODEL=google/gemini-3.5-flash
+AI_MODEL=google/gemini-3.5-flash-lite
+```
+
+Change a model by editing `AI_TRANSCRIBE_MODEL`, `AI_MODEL` or
+`AI_QUALITY_MODEL` and restarting. MCP clients cannot choose models, so a
+model cannot escalate cost on its own; `AI_QUALITY_MODEL` is used only when a
+call sets `high_quality: true`. OpenRouter `:free` model IDs are refused
+unless `AI_ALLOW_FREE_MODELS=true`, because free variants may log prompts.
+
+App allowances: 30 audio minutes and 50 requests per UTC day, 10 minutes per
+note (`AI_DAILY_AUDIO_MINUTES`, `AI_DAILY_REQUESTS`). These are local limits,
+not a provider billing cap. Audio uploaded to Gemini's Files API is deleted
+after each job, and AssemblyAI transcripts are deleted after retrieval.
+Deletion does not guarantee zero provider-side retention. Calls may wait up
+to 45 seconds; longer jobs return a `job_id` for `get_analysis_job`.
+
+Speech-to-text models differ in language coverage. For Malayalam or mixed
+Malayalam/English voice notes, check your chosen model's language list, or
+pass a `language_hint`.
+
+To check a provider without any WhatsApp data, run the fixture command with a
+non-sensitive file:
 
 ```sh
 docker compose run --rm -v "$PWD/sample.ogg:/fixtures/sample.ogg:ro" whatsapp-mcp \
-  gemini-smoke -tier paid -audio /fixtures/sample.ogg
+  ai-smoke -tier paid -audio /fixtures/sample.ogg
 ```
 
 ## Resource use (measured)

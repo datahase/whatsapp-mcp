@@ -9,7 +9,7 @@ default project name `whatsapp-mcp` (volume `whatsapp-mcp_whatsapp-mcp-data`).
 docker compose up -d
 docker compose stop            # graceful: up to 20 s for in-flight work
 docker compose logs -f --tail 100
-curl -s -H "Authorization: Bearer $(cat secrets/mcp_token)" http://127.0.0.1:8765/api/status
+curl -s -H "Authorization: Bearer $(sed -n 's/^WHATSAPP_MCP_TOKEN=//p' .env)" http://127.0.0.1:8765/api/status
 ```
 
 Logs redact phone numbers and message bodies by default. Never set
@@ -17,7 +17,7 @@ Logs redact phone numbers and message bodies by default. Never set
 
 ## Accounts
 
-- **Add:** add an entry to `accounts` in `config.yaml`, then
+- **Add:** add `id:Label` to `WHATSAPP_MCP_ACCOUNTS` in `.env`, then
   `docker compose up -d` (configuration changes take effect on restart). Pair
   it from `/admin`.
 - **Ids are permanent.** The `id` names the data directory. Renaming it later
@@ -59,7 +59,7 @@ docker run --rm -v whatsapp-mcp_whatsapp-mcp-data:/data:ro -v "$PWD":/backup deb
 docker compose start
 ```
 
-Also keep a copy of `config.yaml` and `secrets/` (separately protected), and
+Also keep a copy of `.env` (separately protected; it holds credentials), and
 note the image version you were running.
 
 ## Restore or move to another host
@@ -74,7 +74,7 @@ docker run --rm -v whatsapp-mcp_whatsapp-mcp-data:/data -v "$PWD":/backup debian
   sh -c 'tar -C /data -xzf /backup/whatsapp-mcp-YYYYMMDD.tgz && chown -R 10001:10001 /data'
 ```
 
-3. Restore `config.yaml` and `secrets/`, then run `docker compose up -d`.
+3. Restore `.env`, then run `docker compose up -d`.
 
 To test a restore first, unpack into a differently named volume and run it
 with networking disabled (`docker run --network none …`). Never connect a
@@ -97,12 +97,14 @@ docker save whatsapp-mcp:<tag> | gzip | ssh <host> 'docker load'
 
 ## Credential rotation
 
-- **MCP token / admin password:** replace the file in `secrets/` (keep
-  ownership and mode; on Linux, UID 10001 with mode 0440), then
-  `docker compose up -d --force-recreate`. Update MCP clients. Admin sessions
-  end on restart.
-- **Gemini key:** replace `secrets/gemini_api_key_paid`, then recreate the
-  container.
+- **MCP token / admin password:** change the value in `.env`, then
+  `docker compose up -d` (recreates the container). Update MCP clients. Admin
+  sessions end on restart.
+- **AI provider keys:** change `GEMINI_API_KEY` (or the provider's key) in
+  `.env`, then `docker compose up -d`.
+- Variables are visible to anyone who can run `docker inspect` on the host.
+  If that matters, use `*_FILE` variables (for example
+  `WHATSAPP_MCP_TOKEN_FILE=/run/secrets/token`) with Docker secrets instead.
 - **A WhatsApp session you suspect was copied:** remove the linked device on
   the phone (Settings → Linked devices), then reset and pair the slot again.
 
@@ -111,10 +113,10 @@ docker save whatsapp-mcp:<tag> | gzip | ssh <host> 'docker load'
 | Symptom | Check |
 | --- | --- |
 | `host not allowed` (421) | Add the address the client uses to `allowed_hosts` |
-| Container restarts at start | `docker compose logs`: config errors are listed together; secret files must be at least 16 characters and readable by UID 10001 |
 | Account `error: … in use by another process` | Another container or process uses the same volume |
 | Account `error: another client took over this session` | A second copy of the same data is running somewhere |
 | Sends `rate limited … retry after` | App policy; wait, or change `limits` deliberately |
 | Send `unknown` | WhatsApp did not confirm. Check the chat before sending again with a **new** key |
-| Analysis `quota` / `credits depleted` | Provider billing or quota; fix it in your Gemini project. The service does not switch tiers |
-| Analysis `daily … allowance reached` | Local limit in `gemini.*`; resets at 00:00 UTC |
+| Analysis `quota` / `credits depleted` | Provider billing or quota; fix it with the provider. The service does not switch tiers or providers |
+| Analysis `daily … allowance reached` | Local limit (`AI_DAILY_REQUESTS`, `AI_DAILY_AUDIO_MINUTES`); resets at 00:00 UTC |
+| Container restarts at start | `docker compose logs`: config errors are listed together, e.g. a missing provider key or model |
