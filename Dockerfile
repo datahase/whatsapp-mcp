@@ -6,6 +6,17 @@
 ARG GO_IMAGE=golang:1.26.10-trixie@sha256:e18951cff6896c16909458a8e0cbd52364a347826ff1f5b86d095fe0670d52e7
 ARG RUNTIME_IMAGE=debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 
+# Frontend toolchain exists only in the build stage. Exported assets are
+# embedded in the Go binary; the runtime image has no Node.js process.
+FROM --platform=$BUILDPLATFORM node:22.22.2-trixie-slim AS frontend
+WORKDIR /src/web
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm build
+
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
 ARG TARGETARCH
 ARG BUILDARCH
@@ -24,6 +35,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY --from=frontend /src/internal/httpapi/static ./internal/httpapi/static
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     set -eux; \
     if [ "$TARGETARCH" != "$BUILDARCH" ]; then \
@@ -91,6 +103,7 @@ RUN set -eux; \
     install -d -m 0755 /config
 COPY --from=ffmpeg /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe /usr/local/bin/
 COPY --from=ffmpeg /opt/ffmpeg/share/licenses/COPYING.LGPLv2.1 /usr/share/licenses/ffmpeg/
+COPY --from=frontend /src/internal/httpapi/static/frontend-licenses.txt /usr/share/licenses/whatsapp-mcp/FRONTEND_LICENSES.txt
 COPY --from=build /out/whatsapp-mcp /usr/local/bin/whatsapp-mcp
 COPY LICENSE NOTICE LICENSE-UPSTREAM-MIT THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt UPSTREAM.md /usr/share/licenses/whatsapp-mcp/
 USER 10001:10001

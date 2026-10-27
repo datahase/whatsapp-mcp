@@ -1,5 +1,28 @@
 # Connecting MCP clients
 
+## OAuth (recommended when HTTPS is configured)
+
+For browser sign-in without copying a static token, follow the
+[OAuth guide](OAUTH.md). Codex uses `codex mcp login whatsapp` after adding the
+server's HTTPS endpoint. The examples below cover static-token mode and manual
+media transfers; they are not needed for OAuth client login.
+
+## Start in the browser
+
+1. Sign in to the admin page and confirm that your WhatsApp account says
+   **Connected**.
+2. Choose **Connect client** in the sidebar.
+3. Copy the endpoint and your client's configuration example. Use the token
+   shown there as `WHATSAPP_MCP_TOKEN` in the environment where the client runs.
+4. Follow the matching section below, then ask the client to list your
+   WhatsApp accounts.
+
+Your client needs HTTP MCP support and a network connection to the server.
+A web-hosted assistant may not be able to reach your private server; see the
+hosted-client note below.
+
+## Connection details
+
 Endpoint: `http://<host>:8765/mcp`, Streamable HTTP in stateless mode. It
 accepts both pre-2026 clients (`initialize` first) and the 2026-07-28 revision,
 and never issues an `Mcp-Session-Id`. Every request needs:
@@ -49,8 +72,9 @@ bearer_token_env_var = "WHATSAPP_MCP_TOKEN"
 
 Hosted chat products that connect to MCP servers from their own cloud
 (for example web connectors) need a publicly reachable HTTPS URL and often
-OAuth. This project does not provide that; do not expose it publicly to make
-one work.
+OAuth. See [remote OAuth clients](OAUTH.md#chatgpt-and-claude-remote-connectors)
+for public access or private alternatives. Public access is an owner deployment
+choice and must keep authentication enabled.
 
 ## Upload and download from the client machine
 

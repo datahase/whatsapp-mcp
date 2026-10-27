@@ -4,6 +4,7 @@
 !go.sum
 !cmd/
 !internal/
+!web/
 !LICENSE
 !NOTICE
 !LICENSE-UPSTREAM-MIT
@@ -19,3 +20,9 @@ data/
 .env*
 *.db
 *.db-*
+
+web/node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
+internal/httpapi/static/

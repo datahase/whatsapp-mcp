@@ -48,12 +48,17 @@ var ErrUnknownAccount = errors.New("unknown account_id")
 
 // Manager holds all accounts.
 type Manager struct {
-	cfg      *config.Config
-	accounts map[string]*Account
-	order    []string
-	logLevel string
-	redactor *security.Redactor
-	log      waLog.Logger
+	mu        sync.RWMutex
+	lifecycle sync.Mutex
+	ctx       context.Context
+	stopped   bool
+	managed   []config.Account
+	cfg       *config.Config
+	accounts  map[string]*Account
+	order     []string
+	logLevel  string
+	redactor  *security.Redactor
+	log       waLog.Logger
 	// newClient is a seam for tests.
 	newClient func(ctx context.Context, cfg client.Config) (wa, error)
 	wg        sync.WaitGroup
@@ -95,6 +100,7 @@ type Account struct {
 	log     waLog.Logger
 	limiter *ratelimit.Limiter
 	sendMu  sync.Mutex // serializes sends, so an idempotency key is claimed once
+	pairMu  sync.Mutex // serializes pairing setup and explicit logout
 
 	mu          sync.Mutex
 	state       State
@@ -106,6 +112,7 @@ type Account struct {
 	qr          string
 	pairCode    string
 	pairCancel  context.CancelFunc
+	pairSeq     uint64
 	lastEvent   time.Time
 	lastHistory time.Time
 	ctx         context.Context
@@ -146,28 +153,36 @@ func NewManager(cfg *config.Config, redactor *security.Redactor) *Manager {
 		return realWA{cl}, nil
 	}
 	for _, ac := range cfg.Accounts {
-		a := &Account{
-			ID: ac.ID, Label: ac.Label, ExpectedPhone: ac.ExpectedPhone,
-			Dir: filepath.Join(cfg.DataDir, "accounts", ac.ID),
-			m:   m, log: client.NewStderrLogger("account:"+ac.ID, cfg.LogLevel, false),
-			limiter: ratelimit.New(ratelimit.Config{
-				MinSendInterval: cfg.Limits.SendMinInterval, MaxSendsPerHour: cfg.Limits.SendsPerHour,
-				NonContactMinInterval: cfg.Limits.NonContactMinInterval, NonContactMaxPerHour: cfg.Limits.NonContactPerHour,
-				MaxUsyncPerMinute: 3,
-			}),
-			state: StateDisabled, stateSince: time.Now().UTC(),
-		}
-		if ac.Disabled {
-			a.stateErr = "disabled in configuration"
-		}
-		m.accounts[ac.ID] = a
-		m.order = append(m.order, ac.ID)
+		m.addDefinition(ac)
 	}
 	return m
 }
 
+// addDefinition is called with exclusive access to the registry.
+func (m *Manager) addDefinition(ac config.Account) *Account {
+	a := &Account{
+		ID: ac.ID, Label: ac.Label, ExpectedPhone: ac.ExpectedPhone,
+		Dir: filepath.Join(m.cfg.DataDir, "accounts", ac.ID),
+		m:   m, log: client.NewStderrLogger("account:"+ac.ID, m.cfg.LogLevel, false),
+		limiter: ratelimit.New(ratelimit.Config{
+			MinSendInterval: m.cfg.Limits.SendMinInterval, MaxSendsPerHour: m.cfg.Limits.SendsPerHour,
+			NonContactMinInterval: m.cfg.Limits.NonContactMinInterval, NonContactMaxPerHour: m.cfg.Limits.NonContactPerHour,
+			MaxUsyncPerMinute: 3,
+		}),
+		state: StateDisabled, stateSince: time.Now().UTC(),
+	}
+	if ac.Disabled {
+		a.stateErr = "disabled in configuration"
+	}
+	m.accounts[ac.ID] = a
+	m.order = append(m.order, ac.ID)
+	return a
+}
+
 // Get resolves an account_id. It never chooses a default.
 func (m *Manager) Get(id string) (*Account, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, fmt.Errorf("account_id: required (configured: %s)", strings.Join(m.order, ", "))
@@ -181,6 +196,8 @@ func (m *Manager) Get(id string) (*Account, error) {
 
 // All returns accounts in configuration order.
 func (m *Manager) All() []*Account {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	out := make([]*Account, 0, len(m.order))
 	for _, id := range m.order {
 		out = append(out, m.accounts[id])
@@ -190,12 +207,14 @@ func (m *Manager) All() []*Account {
 
 // Start opens and connects every enabled account. Failures are per account.
 func (m *Manager) Start(ctx context.Context) {
+	m.lifecycle.Lock()
+	defer m.lifecycle.Unlock()
+	m.ctx = ctx
 	var opened []*Account
-	for _, ac := range m.cfg.Accounts {
-		if ac.Disabled {
+	for _, a := range m.All() {
+		if a.stateErr == "disabled in configuration" {
 			continue
 		}
-		a := m.accounts[ac.ID]
 		a.ctx, a.cancel = context.WithCancel(ctx)
 		if err := a.open(); err != nil {
 			a.setState(StateError, err.Error())
@@ -221,6 +240,12 @@ func (m *Manager) Start(ctx context.Context) {
 
 // Stop disconnects every account and closes its databases and lock.
 func (m *Manager) Stop() {
+	m.lifecycle.Lock()
+	defer m.lifecycle.Unlock()
+	if m.stopped {
+		return
+	}
+	m.stopped = true
 	close(m.stopJan)
 	for _, a := range m.All() {
 		if a.cancel != nil {
@@ -391,6 +416,9 @@ func (a *Account) onEvent(evt any) {
 		a.mu.Lock()
 		cl := a.cl
 		a.mu.Unlock()
+		if cl == nil {
+			return
+		}
 		if cl != nil {
 			if err := a.checkIdentity(cl.OwnPhone(), false); err != nil {
 				a.setState(StateError, err.Error())
@@ -400,7 +428,7 @@ func (a *Account) onEvent(evt any) {
 		}
 		a.setState(StateConnected, "")
 	case *events.Disconnected:
-		if a.State() == StateConnected {
+		if state := a.State(); state == StateConnected || state == StateConnecting {
 			a.setState(StateDisconnected, "connection lost; reconnecting automatically")
 		}
 	case *events.LoggedOut:
@@ -436,6 +464,10 @@ func (a *Account) dropClient() {
 func (a *Account) setState(s State, msg string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.setStateLocked(s, msg)
+}
+
+func (a *Account) setStateLocked(s State, msg string) {
 	if a.state != s || a.stateErr != msg {
 		a.state, a.stateErr, a.stateSince = s, msg, time.Now().UTC()
 		if msg != "" {
@@ -535,6 +567,13 @@ func (a *Account) Pairing() PairingInfo {
 // StartPairing begins one bounded pairing attempt (QR, or a phone pairing
 // code when phone is set). It is an explicit admin action.
 func (a *Account) StartPairing(phone string) error {
+	a.m.lifecycle.Lock()
+	defer a.m.lifecycle.Unlock()
+	if a.m.stopped || a.ctx == nil || a.ctx.Err() != nil {
+		return errors.New("account is stopping")
+	}
+	a.pairMu.Lock()
+	defer a.pairMu.Unlock()
 	switch a.State() {
 	case StateConnected, StateConnecting, StateDisconnected:
 		return errors.New("account is already paired; log out first")
@@ -549,6 +588,8 @@ func (a *Account) StartPairing(phone string) error {
 		a.mu.Unlock()
 		return errors.New("account is already paired; log out first")
 	}
+	a.pairSeq++
+	seq := a.pairSeq
 	old := a.cl
 	a.cl = nil
 	a.qr, a.pairCode = "", ""
@@ -569,9 +610,16 @@ func (a *Account) StartPairing(phone string) error {
 		cancel()
 		return fmt.Errorf("start pairing: %w", err)
 	}
-	if err := cl.Connect(pctx, client.ConnectOpts{AllowUnpaired: true}); err != nil {
+	// The socket and its automatic reconnect loop must outlive QR collection.
+	// Canceling pctx on success must never cancel a successfully paired socket.
+	if err := cl.Connect(a.ctx, client.ConnectOpts{AllowUnpaired: true}); err != nil {
 		cancel()
 		return fmt.Errorf("connect for pairing: %w", err)
+	}
+	if pctx.Err() != nil {
+		cancel()
+		cl.Disconnect()
+		return errors.New("pairing timed out; start again")
 	}
 	a.setState(StatePairing, "")
 	if phone != "" {
@@ -585,47 +633,114 @@ func (a *Account) StartPairing(phone string) error {
 		a.pairCode = client.FormatPairingCode(code)
 		a.mu.Unlock()
 	}
-	go a.watchPairing(pctx, cancel, cl, ch)
+	a.m.wg.Add(1)
+	go func() { defer a.m.wg.Done(); a.watchPairing(pctx, cancel, cl, ch, seq) }()
 	return nil
 }
 
-func (a *Account) watchPairing(ctx context.Context, cancel context.CancelFunc, cl wa, ch <-chan qrItem) {
+// pairingCurrent prevents a canceled watcher from overwriting a newer attempt.
+func (a *Account) pairingCurrent(cl wa, seq uint64) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.pairSeq == seq && a.cl == cl
+}
+
+func (a *Account) finishPairing(cl wa, seq uint64) {
+	if !a.pairingCurrent(cl, seq) {
+		return
+	}
+	if err := a.checkIdentity(cl.OwnPhone(), true); err != nil {
+		a.setState(StateError, err.Error()+" (the new link was rejected)")
+		ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
+		_ = cl.Logout(ctx)
+		cancel()
+		a.dropClient()
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pairSeq != seq || a.cl != cl {
+		return
+	}
+	a.qr, a.pairCode = "", ""
+	a.pairCancel = nil
+	// Connected can arrive before the QR consumer sees success. Do not move
+	// a ready or terminal account backwards because of event scheduling.
+	if a.state == StatePairing || a.state == StateUnpaired {
+		a.setStateLocked(StateConnecting, "")
+	}
+}
+
+func (a *Account) watchPairing(ctx context.Context, cancel context.CancelFunc, cl wa, ch <-chan qrItem, seq uint64) {
 	defer cancel()
 	for {
 		select {
 		case <-ctx.Done():
-			if a.State() == StatePairing {
-				cl.Disconnect()
-				a.setState(StateUnpaired, "pairing timed out; start again from the admin page")
+			if !a.pairingCurrent(cl, seq) {
+				return
 			}
+			if cl.IsLoggedIn() {
+				a.finishPairing(cl, seq)
+				return
+			}
+			cl.Disconnect()
+			a.mu.Lock()
+			if a.pairSeq == seq && a.cl == cl && a.state == StatePairing {
+				a.qr, a.pairCode = "", ""
+				a.setStateLocked(StateUnpaired, "pairing timed out; start again from the admin page")
+			}
+			a.mu.Unlock()
 			return
 		case item, ok := <-ch:
+			if !a.pairingCurrent(cl, seq) {
+				return
+			}
 			if !ok {
+				if cl.IsLoggedIn() {
+					a.finishPairing(cl, seq)
+				} else {
+					cl.Disconnect()
+					a.mu.Lock()
+					if a.pairSeq == seq && a.cl == cl && a.state == StatePairing {
+						a.qr, a.pairCode = "", ""
+						a.setStateLocked(StateUnpaired, "pairing ended; start again from the admin page")
+					}
+					a.mu.Unlock()
+				}
 				return
 			}
 			switch item.Event {
 			case "code":
 				a.mu.Lock()
-				a.qr = item.Code
+				if a.pairSeq == seq && a.cl == cl {
+					a.qr = item.Code
+				}
 				a.mu.Unlock()
 			case "success":
-				a.mu.Lock()
-				a.qr, a.pairCode = "", ""
-				a.mu.Unlock()
-				if err := a.checkIdentity(cl.OwnPhone(), true); err != nil {
-					a.setState(StateError, err.Error()+" (the new link was removed)")
-					_ = cl.Logout(context.Background())
-					a.dropClient()
-					return
-				}
-				a.setState(StateConnecting, "paired; finishing initial sync")
+				a.finishPairing(cl, seq)
 				return
 			case "timeout":
-				a.setState(StateUnpaired, "pairing timed out; start again from the admin page")
+				if cl.IsLoggedIn() {
+					a.finishPairing(cl, seq)
+					return
+				}
+				cl.Disconnect()
+				a.mu.Lock()
+				if a.pairSeq == seq && a.cl == cl {
+					a.qr, a.pairCode = "", ""
+					a.setStateLocked(StateUnpaired, "pairing timed out; start again from the admin page")
+				}
+				a.mu.Unlock()
 				return
 			default:
 				if item.Error != nil || strings.HasPrefix(item.Event, "err") {
-					a.setState(StateUnpaired, "pairing failed: "+item.Event)
+					cl.Disconnect()
+					a.mu.Lock()
+					if a.pairSeq == seq && a.cl == cl {
+						a.qr, a.pairCode = "", ""
+						a.setStateLocked(StateUnpaired, "pairing failed; start again from the admin page")
+					}
+					a.mu.Unlock()
 					return
 				}
 			}
@@ -633,16 +748,28 @@ func (a *Account) watchPairing(ctx context.Context, cancel context.CancelFunc, c
 	}
 }
 
+// ErrLogoutOffline preserves the saved link when WhatsApp cannot confirm removal.
+var ErrLogoutOffline = errors.New("WhatsApp is reconnecting. Wait until this account is connected, then try disconnecting again. You can also remove this device from WhatsApp's Linked devices screen. The saved link has been kept")
+
 // Logout unlinks this account's device. Other accounts are unaffected.
 func (a *Account) Logout(ctx context.Context) error {
+	a.pairMu.Lock()
+	defer a.pairMu.Unlock()
 	a.mu.Lock()
 	cl := a.cl
 	a.mu.Unlock()
 	if cl == nil || !cl.IsLoggedIn() {
 		return errors.New("account is not paired")
 	}
+	if !cl.IsConnected() {
+		return ErrLogoutOffline
+	}
 	if err := cl.Logout(ctx); err != nil {
-		return fmt.Errorf("logout: %w", err)
+		a.log.Warnf("logout request failed: %v", err)
+		if !cl.IsConnected() {
+			return ErrLogoutOffline
+		}
+		return errors.New("WhatsApp could not confirm device removal. The saved link has been kept. Try again when the connection is stable")
 	}
 	a.setState(StateLoggedOut, "logged out by admin")
 	a.dropClient()
@@ -683,6 +810,8 @@ func last4(s string) string {
 
 // SortedIDs returns configured account IDs, sorted (for messages).
 func (m *Manager) SortedIDs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	ids := append([]string(nil), m.order...)
 	sort.Strings(ids)
 	return ids

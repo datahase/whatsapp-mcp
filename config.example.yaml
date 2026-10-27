@@ -3,6 +3,8 @@
 
 listen: 0.0.0.0:8765          # inside the container; the host side is set in compose.yaml
 data_dir: /data
+# public_url: https://whatsapp.example.com  # enables OAuth; use your own HTTPS origin
+# oauth_only: true                        # disables static-token API access
 log_level: INFO               # DEBUG, INFO, WARN, ERROR
 
 # Host names/IPs clients use to reach this server, besides localhost.
@@ -18,14 +20,12 @@ allowed_hosts: []
 #   token_file: /run/secrets/mcp_token
 #   admin_password_file: /run/secrets/admin_password
 
-# One entry per WhatsApp account. id is a stable slug (a-z, 0-9, _ or -) and
-# names the data directory; it is not the phone number.
-accounts:
-  - id: personal
-    label: Personal
-    # expected_phone: "15551234567"   # optional safety check, digits with country code
-  - id: second
-    label: Second number
+# Normally add accounts through the admin interface. Advanced preconfigured
+# accounts remain supported; IDs must stay stable after pairing.
+accounts: []
+#  - id: work
+#    label: Work
+#    expected_phone: "15551234567"
 
 limits:
   send_min_interval: 45s        # app policy, not an official WhatsApp limit

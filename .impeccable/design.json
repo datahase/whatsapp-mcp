@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T17:26:11.472661+00:00",
+  "title": "Design System: WhatsApp MCP",
+  "extensions": {
+    "colorMeta": {
+      "background": {
+        "role": "neutral",
+        "displayName": "Background"
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Foreground"
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted"
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Muted Foreground"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Border"
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Primary"
+      },
+      "primary-foreground": {
+        "role": "primary",
+        "displayName": "Primary Foreground"
+      },
+      "destructive": {
+        "role": "semantic",
+        "displayName": "Destructive"
+      },
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Sidebar"
+      },
+      "positive": {
+        "role": "primary",
+        "displayName": "Positive"
+      },
+      "positive-bg": {
+        "role": "primary",
+        "displayName": "Positive Bg"
+      },
+      "warning": {
+        "role": "semantic",
+        "displayName": "Warning"
+      },
+      "warning-bg": {
+        "role": "semantic",
+        "displayName": "Warning Bg"
+      },
+      "dark-background": {
+        "role": "neutral",
+        "displayName": "Dark Background"
+      },
+      "dark-foreground": {
+        "role": "neutral",
+        "displayName": "Dark Foreground"
+      },
+      "dark-card": {
+        "role": "neutral",
+        "displayName": "Dark Card"
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "Dark Muted"
+      },
+      "dark-muted-foreground": {
+        "role": "neutral",
+        "displayName": "Dark Muted Foreground"
+      },
+      "dark-border": {
+        "role": "neutral",
+        "displayName": "Dark Border"
+      },
+      "dark-primary": {
+        "role": "primary",
+        "displayName": "Dark Primary"
+      },
+      "dark-primary-foreground": {
+        "role": "primary",
+        "displayName": "Dark Primary Foreground"
+      },
+      "dark-destructive": {
+        "role": "semantic",
+        "displayName": "Dark Destructive"
+      },
+      "dark-sidebar": {
+        "role": "neutral",
+        "displayName": "Dark Sidebar"
+      },
+      "dark-positive": {
+        "role": "primary",
+        "displayName": "Dark Positive"
+      },
+      "dark-positive-bg": {
+        "role": "primary",
+        "displayName": "Dark Positive Bg"
+      },
+      "dark-warning": {
+        "role": "semantic",
+        "displayName": "Dark Warning"
+      },
+      "dark-warning-bg": {
+        "role": "semantic",
+        "displayName": "Dark Warning Bg"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page heading",
+        "purpose": "Accounts, account detail, and Connect client headings."
+      },
+      "title": {
+        "displayName": "Panel heading",
+        "purpose": "Panel and empty-state headings."
+      }
+    },
+    "shadows": [
+      {
+        "name": "active-navigation",
+        "value": "0 1px 3px #0000000a",
+        "purpose": "Active desktop rail item."
+      },
+      {
+        "name": "control-xs",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Tailwind shadow-xs used on input and outline button."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-transition",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Tailwind default transition; disabled for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-rail-and-stacked-link",
+        "value": "800px"
+      },
+      {
+        "name": "mobile-navigation",
+        "value": "600px"
+      },
+      {
+        "name": "input-small-type",
+        "value": "768px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Add account action using the implemented shadcn variant.",
+      "html": "<button class=\"ds-button\">Add account</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;height:36px;padding:8px 16px;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all 150ms cubic-bezier(.4,0,.2,1)}.ds-button:disabled{pointer-events:none;opacity:.5}.ds-button:focus-visible{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 50%,transparent)}.ds-button{background:var(--primary);color:var(--primary-foreground)}.ds-button:hover{background:color-mix(in oklab,var(--primary) 90%,transparent)}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Disconnect account action using the implemented shadcn variant.",
+      "html": "<button class=\"ds-button\">Disconnect account</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;height:36px;padding:8px 16px;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all 150ms cubic-bezier(.4,0,.2,1)}.ds-button:disabled{pointer-events:none;opacity:.5}.ds-button:focus-visible{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 50%,transparent)}.ds-button{border:1px solid var(--border);background:var(--background);color:var(--foreground);box-shadow:0 1px 2px 0 rgb(0 0 0 / .05)}.ds-button:hover{background:var(--muted)}@media(prefers-color-scheme:dark){.ds-button{background:color-mix(in oklab,var(--border) 30%,transparent)}.ds-button:hover{background:color-mix(in oklab,var(--border) 50%,transparent)}}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Copy action using the implemented shadcn variant.",
+      "html": "<button class=\"ds-button\">Copy</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;height:36px;padding:8px 16px;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all 150ms cubic-bezier(.4,0,.2,1)}.ds-button:disabled{pointer-events:none;opacity:.5}.ds-button:focus-visible{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 50%,transparent)}.ds-button{background:transparent;color:var(--foreground)}.ds-button:hover{background:var(--muted)}@media(prefers-color-scheme:dark){.ds-button:hover{background:color-mix(in oklab,var(--muted) 50%,transparent)}}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+    },
+    {
+      "name": "Destructive button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Disconnect action using the implemented shadcn variant.",
+      "html": "<button class=\"ds-button\">Disconnect</button>",
+      "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;height:36px;padding:8px 16px;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all 150ms cubic-bezier(.4,0,.2,1)}.ds-button:disabled{pointer-events:none;opacity:.5}.ds-button:focus-visible{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 50%,transparent)}.ds-button{background:var(--destructive);color:white}.ds-button:hover{background:color-mix(in oklab,var(--destructive) 90%,transparent)}.ds-button:focus-visible{box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 20%,transparent)}@media(prefers-color-scheme:dark){.ds-button{background:color-mix(in oklab,var(--destructive) 60%,transparent)}.ds-button:focus-visible{box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 40%,transparent)}}@media(prefers-reduced-motion:reduce){.ds-button{transition:none}}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled account and connection fields.",
+      "html": "<label class=\"ds-field\">MCP endpoint<input class=\"ds-input\" value=\"https://your-server/mcp\" readonly></label>",
+      "css": ".ds-field{display:grid;gap:8px;color:var(--foreground);font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;}.ds-input{width:100%;height:36px;min-width:0;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--foreground);padding:4px 12px;font:inherit;font-size:16px;box-shadow:0 1px 2px 0 rgb(0 0 0 / .05);transition:color 150ms,box-shadow 150ms}.ds-input:focus-visible{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--primary) 50%,transparent)}.ds-input:disabled{opacity:.5;pointer-events:none}.ds-input[aria-invalid=true]{border-color:var(--destructive);box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 20%,transparent)}@media(min-width:768px){.ds-input{font-size:14px}}@media(prefers-color-scheme:dark){.ds-input{background:color-mix(in oklab,var(--border) 30%,transparent)}}@media(prefers-reduced-motion:reduce){.ds-input{transition:none}}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Desktop rail items become mobile top tabs.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-navitem ds-active\">Accounts</button><button class=\"ds-navitem\">Connect client</button></nav>",
+      "css": ".ds-nav{display:grid;gap:6px;background:var(--sidebar);padding:16px}.ds-navitem{border:0;background:transparent;display:flex;text-align:left;width:100%;padding:10px 12px;border-radius:7px;color:var(--muted-foreground);font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;font-weight:500;cursor:pointer}.ds-navitem:hover{background:var(--muted);color:var(--foreground)}.ds-navitem.ds-active{background:var(--card);color:var(--foreground);box-shadow:0 1px 3px #0000000a}.ds-navitem:focus-visible{outline:2px solid var(--primary);outline-offset:4px}@media(max-width:600px){.ds-nav{display:flex;gap:16px}.ds-navitem{border-radius:0;padding:12px 0}.ds-navitem.ds-active{background:none;box-shadow:none;border-bottom:2px solid var(--primary)}}"
+    },
+    {
+      "name": "Connected status",
+      "kind": "chip",
+      "refersTo": "status-connected",
+      "description": "State text and colored dot remain together.",
+      "html": "<span class=\"ds-status\"><span class=\"ds-dot\"></span>Connected</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:12px;font-weight:500;padding:4px 9px;border-radius:6px;color:var(--positive);background:var(--positive-bg)}.ds-dot{width:6px;height:6px;border-radius:50%;background:currentColor}"
+    },
+    {
+      "name": "Surface",
+      "kind": "card",
+      "refersTo": "surface",
+      "description": "Bordered container for account lists and settings.",
+      "html": "<section class=\"ds-surface\"><div class=\"ds-content\">Your linked WhatsApp accounts, in one place.</div></section>",
+      "css": ".ds-surface{background:var(--card);color:var(--foreground);border:1px solid var(--border);border-radius:12px;overflow:hidden;font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px}.ds-content{padding:24px;line-height:1.65}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Operate",
+    "overview": "Operate is a compact account manager with neutral surfaces, emerald actions, and explicit connection states. System typography, thin borders, and restrained depth keep account setup and recovery easy to scan.",
+    "keyCharacteristics": [
+      "System light and dark themes.",
+      "Compact navigation and bordered surfaces.",
+      "Text labels accompany connection colors."
+    ],
+    "rules": [],
+    "dos": [
+      "Do use the system color scheme and semantic CSS variables.",
+      "Do keep labels, visible keyboard focus, and explicit loading and error states.",
+      "Do keep code and tokens in monospace, with numeric entry using tabular figures."
+    ],
+    "donts": [
+      "Don't fabricate account names or counts in empty states.",
+      "Don't mix client configuration into the account-linking panel.",
+      "Don't put destructive account controls in the account-list toolbar."
+    ]
+  }
+}

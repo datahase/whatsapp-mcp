@@ -203,8 +203,8 @@ func TestYAMLFileAndLegacyGeminiSection(t *testing.T) {
 	if _, err := Load(write(t, "accounts: [{id: a}]\nsecret_key: x\n")); err == nil {
 		t.Fatal("unknown YAML field accepted")
 	}
-	if _, err := Load(missing(t)); err == nil {
-		t.Fatal("missing file and no WHATSAPP_MCP_ACCOUNTS accepted")
+	if c, err := Load(missing(t)); err != nil || len(c.Accounts) != 0 {
+		t.Fatal("fresh install must start without preset accounts")
 	}
 	// Environment overrides the file.
 	t.Setenv("AI_MODEL", "gemini-3.8-flash")

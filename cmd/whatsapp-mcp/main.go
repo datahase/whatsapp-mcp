@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,11 +17,13 @@ import (
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
 	"github.com/datahase/whatsapp-mcp/internal/ai"
+	"github.com/datahase/whatsapp-mcp/internal/authflow"
 	"github.com/datahase/whatsapp-mcp/internal/client"
 	"github.com/datahase/whatsapp-mcp/internal/config"
 	"github.com/datahase/whatsapp-mcp/internal/httpapi"
 	mcpsrv "github.com/datahase/whatsapp-mcp/internal/mcp"
 	"github.com/datahase/whatsapp-mcp/internal/security"
+	"github.com/datahase/whatsapp-mcp/internal/store"
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
@@ -32,12 +35,13 @@ Usage:
   whatsapp-mcp serve        [-config FILE]   run the service
   whatsapp-mcp check-config [-config FILE]   validate configuration and secret files
   whatsapp-mcp healthcheck  [-url URL]       liveness probe used by the container
+  whatsapp-mcp login-code   [-config FILE]   print a one-time admin sign-in code (10 minutes)
   whatsapp-mcp ai-smoke     [-config FILE] -tier paid|test [-audio FILE] [-image FILE]
                                              one provider check with NON-SENSITIVE fixtures only
   whatsapp-mcp -version
 
 FILE defaults to $WHATSAPP_MCP_CONFIG or /config/config.yaml. The file is
-optional when WHATSAPP_MCP_ACCOUNTS is set; secrets come from environment
+optional; accounts can be added through the admin page; secrets come from environment
 variables (see .env.example).
 Set WHATSAPP_MCP_DEBUG=1 to log unredacted JIDs and message bodies (never in production).
 `
@@ -63,6 +67,8 @@ func main() {
 		code = runCheck(args[1:])
 	case "healthcheck":
 		code = runHealth(args[1:])
+	case "login-code":
+		code = runLoginCode(args[1:])
 	case "ai-smoke", "gemini-smoke":
 		code = runSmoke(args[1:])
 	case "version":
@@ -134,6 +140,13 @@ func runServe(args []string) int {
 		return 1
 	}
 
+	serviceLock, err := store.TryLock(cfg.DataDir)
+	if err != nil {
+		log.Errorf("data directory is in use: %v", err)
+		return 1
+	}
+	defer serviceLock.Release()
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -142,6 +155,10 @@ func runServe(args []string) int {
 	client.InitWAVersion(ctx, log)
 
 	mgr := accounts.NewManager(cfg, redactor)
+	if err := mgr.LoadRegistry(); err != nil {
+		log.Errorf("account registry: %v", err)
+		return 1
+	}
 	mgr.Start(ctx)
 	defer mgr.Stop()
 
@@ -157,15 +174,26 @@ func runServe(args []string) int {
 		defer gem.Close()
 	}
 
+	var oauth *authflow.Server
+	if cfg.PublicURL != "" {
+		oauth, err = authflow.Open(filepath.Join(cfg.DataDir, "service"), cfg.PublicURL)
+		if err != nil {
+			log.Errorf("OAuth: %v", err)
+			return 1
+		}
+		defer oauth.Close()
+		public, _ := url.Parse(cfg.PublicURL)
+		cfg.AllowedHosts = append(cfg.AllowedHosts, public.Hostname())
+	}
 	m := mcpsrv.NewServer(mgr, gem, cfg.Limits.MaxInlineBytes)
-	h := httpapi.New(httpapi.Config{Token: cfg.Auth.Token, AdminPassword: cfg.Auth.AdminPassword, AllowedHosts: cfg.AllowedHosts,
-		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), AI: gem, Version: Version, Log: log})
+	h := httpapi.New(httpapi.Config{OAuth: oauth, OAuthOnly: cfg.OAuthOnly, Token: cfg.Auth.Token, AdminPassword: cfg.Auth.AdminPassword, AllowedHosts: cfg.AllowedHosts,
+		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), AI: gem, Version: Version, Log: log, DataDir: cfg.DataDir})
 	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Minute,
 		IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
-	log.Infof("whatsapp-mcp %s listening on %s (MCP /mcp, admin /admin); %d account(s), analysis=%v", Version, cfg.Listen, len(cfg.Accounts), gem != nil)
+	log.Infof("whatsapp-mcp %s listening on %s (MCP /mcp, admin /admin); %d account(s), analysis=%v", Version, cfg.Listen, len(mgr.All()), gem != nil)
 
 	select {
 	case <-ctx.Done():
@@ -179,5 +207,38 @@ func runServe(args []string) int {
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(sctx)
+	return 0
+}
+
+// runLoginCode prints a one-time sign-in code for the admin page. Run it
+// inside the container: docker compose exec whatsapp-mcp whatsapp-mcp login-code
+func runLoginCode(args []string) int {
+	fs := flag.NewFlagSet("login-code", flag.ContinueOnError)
+	path := configFlag(fs)
+	if fs.Parse(args) != nil {
+		return 2
+	}
+	cfg, err := config.Load(*path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	code, err := httpapi.IssueLoginCode(cfg.DataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not create a code:", err)
+		return 1
+	}
+	host := "127.0.0.1"
+	if len(cfg.AllowedHosts) > 0 {
+		host = cfg.AllowedHosts[0]
+	} else if b := os.Getenv("BIND_IP"); b != "" && b != "0.0.0.0" {
+		host = b
+	}
+	port := os.Getenv("HOST_PORT")
+	if port == "" {
+		port = "8765"
+	}
+	fmt.Printf("Sign-in code: %s  (works once, expires in %d minutes)\n", code, int(httpapi.LoginCodeTTL.Minutes()))
+	fmt.Printf("Or open:      http://%s:%s/admin/login?code=%s\n", host, port, code)
 	return 0
 }

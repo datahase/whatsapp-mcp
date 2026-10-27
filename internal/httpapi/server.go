@@ -22,11 +22,14 @@ import (
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
 	"github.com/datahase/whatsapp-mcp/internal/ai"
+	"github.com/datahase/whatsapp-mcp/internal/authflow"
 	wamcp "github.com/datahase/whatsapp-mcp/internal/mcp"
 )
 
 // Config wires the HTTP surface.
 type Config struct {
+	OAuth         *authflow.Server
+	OAuthOnly     bool
 	Token         string
 	AdminPassword string
 	AllowedHosts  []string
@@ -36,6 +39,8 @@ type Config struct {
 	AI            *ai.Service
 	Version       string
 	Log           waLog.Logger
+	// DataDir is where one-time sign-in codes are read from.
+	DataDir string
 }
 
 // Server is the HTTP handler.
@@ -65,6 +70,7 @@ func New(cfg Config) *Server {
 	s.mux.Handle("GET /api/accounts/{account}/media/{media}", s.bearer(http.HandlerFunc(s.download)))
 	s.mux.Handle("GET /api/status", s.bearer(http.HandlerFunc(s.status)))
 	s.mountAdmin()
+	s.mountOAuth()
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin", http.StatusSeeOther) })
 	return s
 }
@@ -81,6 +87,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host not allowed; add it to allowed_hosts", http.StatusMisdirectedRequest)
 		return
 	}
+	// "Origin: null" on a same-origin navigation (some browsers and privacy
+	// modes send it) carries no cross-site risk; Sec-Fetch-Site confirms it.
+	if r.Header.Get("Origin") == "null" && r.Header.Get("Sec-Fetch-Site") == "same-origin" {
+		r.Header.Del("Origin")
+	}
 	if o := r.Header.Get("Origin"); o != "" {
 		u, err := url.Parse(o)
 		if err != nil || !s.allowed[strings.ToLower(u.Hostname())] {
@@ -91,6 +102,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	scheme := "http"
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		scheme = "https"
+	}
+	if s.cfg.OAuth != nil {
+		issuer, _ := url.Parse(s.cfg.OAuth.Issuer)
+		if issuer.Scheme == "https" && strings.HasPrefix(r.URL.Path, "/admin") && (scheme != "https" || r.Host != issuer.Host) {
+			if r.Method == http.MethodGet {
+				http.Redirect(w, r, s.cfg.OAuth.Issuer+r.URL.RequestURI(), http.StatusSeeOther)
+			} else {
+				http.Error(w, "Use the HTTPS admin address", http.StatusBadRequest)
+			}
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/oauth/") && issuer.Scheme == "https" && (scheme != "https" || r.Host != issuer.Host) {
+			http.Error(w, "OAuth requires the configured HTTPS address", http.StatusBadRequest)
+			return
+		}
 	}
 	r.Header.Set(wamcp.OriginHeader, scheme+"://"+r.Host)
 	s.mux.ServeHTTP(w, r)
@@ -111,8 +137,16 @@ func equalSecret(got, want string) bool {
 func (s *Server) bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || !equalSecret(got, s.cfg.Token) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="whatsapp-mcp"`)
+		valid := ok && !s.cfg.OAuthOnly && equalSecret(got, s.cfg.Token)
+		if !valid && ok && s.cfg.OAuth != nil {
+			valid = s.cfg.OAuth.Validate(r.Context(), got)
+		}
+		if !valid {
+			challenge := `Bearer realm="whatsapp-mcp"`
+			if s.cfg.OAuth != nil {
+				challenge = s.cfg.OAuth.Challenge()
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

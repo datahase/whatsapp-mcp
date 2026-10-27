@@ -9,6 +9,8 @@ import (
 
 // phoneDigitRun matches international-format phone numbers: an optional "+"
 // followed by 10 or more digits. Used to mask phone numbers in debug output.
+var logJID = regexp.MustCompile(`\b[0-9]+(?::[0-9]+)?@(?:s\.whatsapp\.net|g\.us|lid|broadcast)\b`)
+
 var phoneDigitRun = regexp.MustCompile(`\+?\d{10,}`)
 
 // Redactor obscures JIDs and message bodies in log output. A zero-value
@@ -124,4 +126,10 @@ func last5(s string) string {
 		return digits
 	}
 	return digits[len(digits)-5:]
+}
+
+// LogLine also covers protocol-library logs, which do not pass their JIDs
+// through the application's structured logging calls.
+func (r *Redactor) LogLine(line string) string {
+	return maskPhones(logJID.ReplaceAllStringFunc(line, r.JID))
 }

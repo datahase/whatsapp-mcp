@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"image"
@@ -14,6 +15,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -33,6 +35,11 @@ const (
 )
 
 func newTestServer(t *testing.T) (*httptest.Server, *accounts.Manager) {
+	srv, mgr, _ := newTestServerDir(t)
+	return srv, mgr
+}
+
+func newTestServerDir(t *testing.T) (*httptest.Server, *accounts.Manager, string) {
 	t.Helper()
 	cfg := &config.Config{DataDir: t.TempDir(), LogLevel: "ERROR", Accounts: []config.Account{{ID: "alpha", Label: "A"}, {ID: "beta", Label: "B"}}}
 	cfg.Limits.MaxMediaBytes, cfg.Limits.MaxInlineBytes = 64<<10, 32<<10
@@ -41,10 +48,10 @@ func newTestServer(t *testing.T) (*httptest.Server, *accounts.Manager) {
 	mgr.Start(context.Background())
 	t.Cleanup(mgr.Stop)
 	m := wamcp.NewServer(mgr, nil, cfg.Limits.MaxInlineBytes)
-	srv := httptest.NewServer(New(Config{Token: token, AdminPassword: adminPW, MaxUpload: cfg.Limits.MaxMediaBytes,
+	srv := httptest.NewServer(New(Config{Token: token, AdminPassword: adminPW, MaxUpload: cfg.Limits.MaxMediaBytes, DataDir: cfg.DataDir,
 		Manager: mgr, MCP: m.Handler(), Version: "test", Log: client.NewStderrLogger("t", "ERROR", false)}))
 	t.Cleanup(srv.Close)
-	return srv, mgr
+	return srv, mgr, cfg.DataDir
 }
 
 func do(t *testing.T, method, u string, body io.Reader, hdr map[string]string) *http.Response {
@@ -174,7 +181,7 @@ func TestAdminLoginSessionAndCSRF(t *testing.T) {
 		t.Fatalf("login: %v %d %s", err, resp.StatusCode, resp.Request.URL.Path)
 	}
 	page, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(page), "alpha") || resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("Content-Security-Policy") == "" {
+	if strings.Contains(string(page), token) || resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("Content-Security-Policy") == "" {
 		t.Fatal("admin page missing accounts or security headers")
 	}
 	u, _ := url.Parse(srv.URL + "/admin")
@@ -199,13 +206,17 @@ func TestAdminLoginSessionAndCSRF(t *testing.T) {
 	if resp.StatusCode != 403 {
 		t.Fatalf("missing csrf: %d", resp.StatusCode)
 	}
-	acct, _ := c.Get(srv.URL + "/admin/accounts/alpha")
-	body, _ := io.ReadAll(acct.Body)
-	m := regexp.MustCompile(`name="csrf" value="([0-9a-f]+)"`).FindSubmatch(body)
-	if m == nil {
-		t.Fatal("no csrf token in page")
+	acct, _ := c.Get(srv.URL + "/admin/api/session")
+	var sessionData struct {
+		CSRF string `json:"csrf"`
 	}
-	resp, _ = c.PostForm(srv.URL+"/admin/accounts/alpha/reset", url.Values{"csrf": {string(m[1])}, "confirm": {"alpha"}})
+	_ = json.NewDecoder(acct.Body).Decode(&sessionData)
+	acct.Body.Close()
+	if sessionData.CSRF == "" {
+		t.Fatal("no csrf token in session response")
+	}
+	body := page
+	resp, _ = c.PostForm(srv.URL+"/admin/accounts/alpha/reset", url.Values{"csrf": {sessionData.CSRF}, "confirm": {"alpha"}})
 	if resp.StatusCode != 200 || !strings.Contains(resp.Request.URL.RawQuery, "reset") {
 		t.Fatalf("reset with csrf: %d %s", resp.StatusCode, resp.Request.URL)
 	}
@@ -336,5 +347,165 @@ func TestMCPToolSurface(t *testing.T) {
 	}
 	if _, isErr, _ = callTool(t, srv, "get_media", map[string]any{"account_id": "beta", "media_id": obj.ID}); !isErr {
 		t.Fatal("beta fetched alpha's media through MCP")
+	}
+}
+
+func TestOneTimeLoginCode(t *testing.T) {
+	srv, _, dataDir := newTestServerDir(t)
+	code, err := IssueLoginCode(dataDir)
+	if err != nil || len(code) != 9 || code[4] != '-' {
+		t.Fatalf("code %q %v", code, err)
+	}
+	// A link only fills the form; it does not sign in by itself.
+	page, _ := http.Get(srv.URL + "/admin/login?code=" + code)
+	body, _ := io.ReadAll(page.Body)
+	page.Body.Close()
+	if page.StatusCode != 200 || len(page.Cookies()) != 0 || strings.Contains(string(body), code) {
+		t.Fatal("static code link must not embed credentials or consume the code")
+	}
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	// Lower case and without the dash still works, once.
+	typed := strings.ToLower(strings.ReplaceAll(code, "-", ""))
+	resp, err := c.PostForm(srv.URL+"/admin/login", url.Values{"code": {typed}})
+	if err != nil || resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+		t.Fatalf("code sign-in: %v %d %s", err, resp.StatusCode, resp.Request.URL.Path)
+	}
+	resp, _ = http.PostForm(srv.URL+"/admin/login", url.Values{"code": {code}})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("code reused: %d", resp.StatusCode)
+	}
+	// Expired codes are refused.
+	old, _ := IssueLoginCode(dataDir)
+	_ = os.WriteFile(codeFile(dataDir, old), []byte("1"), 0o600)
+	if resp, _ = http.PostForm(srv.URL+"/admin/login", url.Values{"code": {old}}); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expired code accepted: %d", resp.StatusCode)
+	}
+	if entries, _ := os.ReadDir(codeDir(dataDir)); len(entries) != 0 {
+		t.Fatalf("used/expired codes left on disk: %d", len(entries))
+	}
+}
+
+// Regression: browsers send "Origin: null" on form posts from pages with
+// Referrer-Policy: no-referrer, which blocked sign-in ("origin not allowed").
+func TestSameOriginNullOriginAndAdminAssets(t *testing.T) {
+	srv, _ := newTestServer(t)
+	resp := do(t, "POST", srv.URL+"/admin/login", strings.NewReader("password="+adminPW),
+		map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "null", "Sec-Fetch-Site": "same-origin"})
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatal("same-origin form post with Origin: null rejected")
+	}
+	resp = do(t, "POST", srv.URL+"/admin/login", strings.NewReader("password="+adminPW),
+		map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "null", "Sec-Fetch-Site": "cross-site"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-site Origin: null accepted: %d", resp.StatusCode)
+	}
+	page := do(t, "GET", srv.URL+"/admin/login", nil, nil)
+	csp := page.Header.Get("Content-Security-Policy")
+	if strings.Contains(csp, "unsafe-inline") || !strings.Contains(csp, "script-src 'self'") || page.Header.Get("Referrer-Policy") != "same-origin" {
+		t.Fatalf("headers: csp=%q referrer=%q", csp, page.Header.Get("Referrer-Policy"))
+	}
+	body, _ := io.ReadAll(page.Body)
+	for _, script := range regexp.MustCompile(`<script\b([^>]*)>([\s\S]*?)</script>`).FindAllSubmatch(body, -1) {
+		if !strings.Contains(string(script[1]), "src=") {
+			hash := sha256.Sum256(script[2])
+			if !strings.Contains(csp, "'sha256-"+base64.StdEncoding.EncodeToString(hash[:])+"'") {
+				t.Fatal("bootstrap script missing CSP hash")
+			}
+		}
+	}
+	assets := regexp.MustCompile(`(?:src|href)="(/admin/_next/[^"]+)"`).FindAllSubmatch(body, -1)
+	if len(assets) == 0 {
+		t.Fatal("Next.js assets are not built")
+	}
+	for _, a := range assets {
+		r := do(t, "GET", srv.URL+string(a[1]), nil, nil)
+		r.Body.Close()
+		if r.StatusCode != 200 {
+			t.Fatalf("asset %s: %d", a[1], r.StatusCode)
+		}
+	}
+
+}
+
+func TestDashboardShowsClientConnection(t *testing.T) {
+	srv, _ := newTestServer(t)
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	_, _ = c.PostForm(srv.URL+"/admin/login", url.Values{"password": {adminPW}})
+	resp, _ := c.Get(srv.URL + "/admin/api/session")
+	var data map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&data)
+	resp.Body.Close()
+	if data["endpoint"] != srv.URL+"/mcp" || data["token"] != token || data["csrf"] == "" {
+		t.Fatal("authenticated connection details missing")
+	}
+
+	st, _ := c.Get(srv.URL + "/admin/accounts/alpha/state")
+	var v map[string]any
+	_ = json.NewDecoder(st.Body).Decode(&v)
+	if v["state"] != "unpaired" {
+		t.Fatalf("state endpoint: %v", v)
+	}
+	if r, _ := http.Get(srv.URL + "/admin/accounts/alpha/state"); r.Request.URL.Path != "/admin/login" {
+		t.Fatal("state endpoint reachable without a session")
+	}
+}
+
+func TestAddAccountRequiresAdminAndCSRF(t *testing.T) {
+	srv, mgr := newTestServer(t)
+	unauth := do(t, "POST", srv.URL+"/admin/api/accounts", strings.NewReader(""), map[string]string{"Accept": "application/json"})
+	if unauth.StatusCode != 401 {
+		t.Fatalf("unauthenticated add: %d", unauth.StatusCode)
+	}
+	unauth.Body.Close()
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	resp, _ := c.PostForm(srv.URL+"/admin/login", url.Values{"password": {adminPW}})
+	resp.Body.Close()
+	resp, _ = c.PostForm(srv.URL+"/admin/api/accounts", url.Values{})
+	if resp.StatusCode != 403 {
+		t.Fatalf("add without CSRF: %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp, _ = c.Get(srv.URL + "/admin/api/session")
+	var session struct {
+		CSRF string `json:"csrf"`
+	}
+	json.NewDecoder(resp.Body).Decode(&session)
+	resp.Body.Close()
+	resp, err := c.PostForm(srv.URL+"/admin/api/accounts", url.Values{"csrf": {session.CSRF}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var added accounts.Status
+	json.NewDecoder(resp.Body).Decode(&added)
+	if resp.StatusCode != 201 || added.AccountID == "" || added.Label != "WhatsApp" {
+		t.Fatalf("add: %d %+v", resp.StatusCode, added)
+	}
+	if len(mgr.All()) != 3 {
+		t.Fatal("account not registered")
+	}
+}
+
+func TestLoginCodeCanBeConsumedOnlyOnceConcurrently(t *testing.T) {
+	dir := t.TempDir()
+	code, err := IssueLoginCode(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan bool, 20)
+	for range 20 {
+		go func() { results <- consumeLoginCode(dir, code) }()
+	}
+	successes := 0
+	for range 20 {
+		if <-results {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("consumed %d times", successes)
 	}
 }

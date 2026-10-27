@@ -55,3 +55,12 @@ Derived from Sealjay/mcp-whatsapp (MIT), commit
 WhatsApp is a trademark of WhatsApp LLC / Meta. This project is unofficial and
 is not affiliated with, endorsed or supported by Meta. Gemini is a trademark of
 Google LLC.
+
+## Admin frontend
+
+The build exports a Next.js/React application with shadcn/ui components.
+Next.js, React, Radix UI, Tailwind CSS, shadcn/ui, class-variance-authority,
+clsx, tailwind-merge and tw-animate-css use the MIT license. Lucide icons use
+the ISC license. Their source and pinned dependencies are in `web/` and
+`web/pnpm-lock.yaml`. Frontend packages are build dependencies; their browser
+assets are included in the application binary.

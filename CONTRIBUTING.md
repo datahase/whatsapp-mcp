@@ -9,6 +9,7 @@ lightweight: new runtime dependencies, services or tools need a clear reason.
 - FFmpeg/FFprobe on `PATH` with libopus, libmp3lame and libx264 (tests
   generate synthetic fixtures; media tests skip without them)
 - Docker with Buildx for image work
+- Node.js 22 and pnpm 10.32.1 for the build-time admin frontend (not required to run the image)
 
 ```sh
 make test-race   # all unit/integration tests

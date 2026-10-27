@@ -1,0 +1,56 @@
+#!/bin/sh
+# whatsapp-mcp Docker management CLI
+set -eu
+
+usage() {
+    cat <<'HELP'
+Usage: whatsapp-mcp [--container NAME] COMMAND
+
+  login         Generate a one-time admin sign-in code
+  status        Show container state and health
+  logs [ARGS]   Show the last 50 log lines (add --follow to stream)
+  start         Start the existing container
+  stop          Stop without deleting accounts or messages
+  restart       Restart the existing container
+  help          Show this help
+
+Run on the Docker host, from any folder. Docker must be accessible.
+Automatically finds the Compose service named whatsapp-mcp. If more than one
+exists, select one with --container NAME or WHATSAPP_MCP_CONTAINER.
+HELP
+}
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+container=${WHATSAPP_MCP_CONTAINER:-}
+if [ "${1:-}" = --container ]; then
+    [ "$#" -ge 3 ] || fail 'Use: whatsapp-mcp --container NAME COMMAND'
+    container=$2
+    shift 2
+fi
+command=${1:-help}
+case "$command" in
+    help|-h|--help) usage; exit 0 ;;
+    login|login-code|status|start|stop|restart|logs) shift ;;
+    *) usage >&2; fail "Unknown command: $command" ;;
+esac
+if [ "$command" != logs ] && [ "$#" -ne 0 ]; then
+    fail "Unexpected arguments for $command. Run: whatsapp-mcp help"
+fi
+command -v docker >/dev/null 2>&1 || fail 'Docker is required on this computer.'
+docker info >/dev/null 2>&1 || fail 'Cannot access Docker. Check that Docker is running and your user has Docker access.'
+if [ -z "$container" ]; then
+    ids=$(docker ps -aq --filter label=com.docker.compose.service=whatsapp-mcp --filter label=com.docker.compose.oneoff=False) || exit 1
+    [ -n "$ids" ] || fail 'No WhatsApp MCP container found. Start the server once using the setup guide, or select an existing container with --container NAME.'
+    # Docker emits one hexadecimal ID per line. Never choose an arbitrary instance.
+    count=$(printf '%s\n' "$ids" | wc -l | tr -d ' ')
+    [ "$count" -eq 1 ] || fail 'Multiple WhatsApp MCP containers found. Choose one with: whatsapp-mcp --container NAME COMMAND'
+    container=$ids
+fi
+case "$container" in -*) fail 'Container name must not start with a dash.' ;; esac
+docker inspect "$container" >/dev/null 2>&1 || fail "Container not found: $container"
+case "$command" in
+    login|login-code) exec docker exec "$container" whatsapp-mcp login-code ;;
+    status) exec docker ps -a --filter "id=$(docker inspect --format '{{.Id}}' "$container")" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' ;;
+    logs) exec docker logs --tail 50 "$@" "$container" ;;
+    start|stop|restart) exec docker "$command" "$container" ;;
+esac

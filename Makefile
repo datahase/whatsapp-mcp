@@ -1,9 +1,15 @@
-.PHONY: build test test-race e2e lint vet fmt vuln parity licenses image image-multi smoke clean
+.PHONY: frontend build test test-race e2e lint vet fmt vuln parity licenses image image-multi smoke clean
 
 SHELL := /bin/bash
 BIN := ./bin/whatsapp-mcp
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 IMAGE ?= datahase/whatsapp-mcp:local
+
+frontend:
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web build
+
+build test test-race e2e: frontend
 
 build:
 	mkdir -p bin

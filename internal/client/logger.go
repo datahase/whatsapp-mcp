@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datahase/whatsapp-mcp/internal/security"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
@@ -94,4 +95,27 @@ func (quietSignalLogger) Configure(string)       {}
 func init() {
 	var l signallog.Loggable = quietSignalLogger{}
 	signallog.Setup(&l)
+}
+
+// redactingLogger applies the same privacy boundary to whatsmeow's own log
+// calls, including pairing notices and nested socket loggers.
+type redactingLogger struct {
+	waLog.Logger
+	redactor *security.Redactor
+}
+
+func (l redactingLogger) Errorf(msg string, args ...interface{}) {
+	l.Logger.Errorf("%s", l.redactor.LogLine(fmt.Sprintf(msg, args...)))
+}
+func (l redactingLogger) Warnf(msg string, args ...interface{}) {
+	l.Logger.Warnf("%s", l.redactor.LogLine(fmt.Sprintf(msg, args...)))
+}
+func (l redactingLogger) Infof(msg string, args ...interface{}) {
+	l.Logger.Infof("%s", l.redactor.LogLine(fmt.Sprintf(msg, args...)))
+}
+func (l redactingLogger) Debugf(msg string, args ...interface{}) {
+	l.Logger.Debugf("%s", l.redactor.LogLine(fmt.Sprintf(msg, args...)))
+}
+func (l redactingLogger) Sub(module string) waLog.Logger {
+	return redactingLogger{Logger: l.Logger.Sub(module), redactor: l.redactor}
 }

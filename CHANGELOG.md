@@ -5,7 +5,22 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+- Add an installable host management command: `whatsapp-mcp login`, status, logs,
+  start, stop and restart work from any folder without container names.
+- Support standalone and curl-piped CLI installation from GitHub, with HTTPS
+  download, optional ref selection and validation before replacing an install.
+
 ### Added
+- MCP OAuth authorization-code flow with S256 PKCE, discovery, dynamic public
+  client registration, rotating refresh tokens and owner-managed revocation.
+- Browser client approval and OAuth-first connection instructions when a
+  public HTTPS origin is configured; optional OAuth-only API mode.
+- Next.js and shadcn/ui admin interface, exported at build time and embedded
+  in the Go binary; system light/dark theme, no Node.js runtime.
+- Add accounts through the admin UI, persisted in the private data volume.
+  Fresh installations start with no preset accounts.
+- Single-use admin sign-in codes via `whatsapp-mcp login-code` (10 minutes).
+- Authenticated client connection screen with endpoint/token copy controls.
 - AI providers via their native APIs: Gemini (default), OpenAI, Groq,
   OpenRouter, Anthropic, any OpenAI-compatible API, and dedicated
   speech-to-text services Deepgram, ElevenLabs Scribe and AssemblyAI.

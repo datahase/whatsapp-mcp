@@ -33,6 +33,7 @@ api-key-paid
 /bin/
 /dist/
 /coverage/
+/.playwright-mcp/
 cover.out
 *.test
 .DS_Store
@@ -43,3 +44,10 @@ cover.out
 /docs/UPSTREAM_REVIEW.md
 /docs/CODEX_STARTER_PROMPT.md
 /docs/IMPLEMENTATION_STATUS.md
+
+# Frontend dependencies and generated static export (built by Docker/CI).
+/web/node_modules/
+/web/.next/
+/web/out/
+/web/tsconfig.tsbuildinfo
+/internal/httpapi/static/*

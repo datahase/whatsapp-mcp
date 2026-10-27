@@ -21,6 +21,8 @@ import (
 
 // Config is the whole service configuration.
 type Config struct {
+	PublicURL    string    `yaml:"public_url"`
+	OAuthOnly    bool      `yaml:"oauth_only"`
 	Listen       string    `yaml:"listen"`
 	DataDir      string    `yaml:"data_dir"`
 	AllowedHosts []string  `yaml:"allowed_hosts"`
@@ -130,8 +132,8 @@ var accountIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 var phoneRe = regexp.MustCompile(`^[0-9]{6,15}$`)
 
 // Load reads the optional YAML file at path, applies environment variables,
-// defaults and secrets, and validates the result. A missing file is fine when
-// the environment supplies the accounts (WHATSAPP_MCP_ACCOUNTS).
+// defaults and secrets, and validates the result. A missing file is fine;
+// fresh installations add accounts through the authenticated admin UI.
 func Load(path string) (*Config, error) {
 	var c Config
 	raw, err := os.ReadFile(path)
@@ -142,9 +144,7 @@ func Load(path string) (*Config, error) {
 		if err := dec.Decode(&c); err != nil && err.Error() != "EOF" {
 			return nil, fmt.Errorf("parse config %s: %w", path, err)
 		}
-	case os.IsNotExist(err) && os.Getenv("WHATSAPP_MCP_ACCOUNTS") != "":
-	case os.IsNotExist(err):
-		return nil, fmt.Errorf("config file %s not found; create it or set WHATSAPP_MCP_ACCOUNTS (see .env.example)", path)
+	case os.IsNotExist(err): // Fresh installs add accounts through the admin UI.
 	default:
 		return nil, fmt.Errorf("read config: %w", err)
 	}
@@ -186,6 +186,16 @@ func setStr(dst *string, keys ...string) {
 // applyEnv lets every commonly changed setting come from the environment,
 // which overrides the YAML file. Empty variables are treated as unset.
 func (c *Config) applyEnv() error {
+	if v, ok := env("WHATSAPP_MCP_PUBLIC_URL"); ok {
+		c.PublicURL = v
+	}
+	if v, ok := env("WHATSAPP_MCP_OAUTH_ONLY"); ok {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return errors.New("WHATSAPP_MCP_OAUTH_ONLY must be true or false")
+		}
+		c.OAuthOnly = b
+	}
 	var errs []error
 	if v, ok := env("WHATSAPP_MCP_ACCOUNTS"); ok {
 		accts, err := parseAccounts(v)
@@ -457,8 +467,8 @@ func (c *Config) resolveSecrets() error {
 // Validate reports every configuration problem at once.
 func (c *Config) Validate() error {
 	var errs []error
-	if len(c.Accounts) == 0 {
-		errs = append(errs, errors.New("accounts: at least one account is required (WHATSAPP_MCP_ACCOUNTS or accounts: in the config file)"))
+	if c.OAuthOnly && c.PublicURL == "" {
+		errs = append(errs, errors.New("oauth_only requires public_url"))
 	}
 	ids := map[string]bool{}
 	phones := map[string]bool{}

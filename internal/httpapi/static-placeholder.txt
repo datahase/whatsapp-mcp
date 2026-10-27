@@ -1,0 +1,1 @@
+Build the admin UI with pnpm --dir web build before building or testing Go.

@@ -110,7 +110,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		device = container.NewDevice()
 	}
 
-	wa := whatsmeow.NewClient(device, logger)
+	wa := whatsmeow.NewClient(device, redactingLogger{Logger: logger, redactor: redactor})
 	c := &Client{
 		wa:        wa,
 		container: container,
