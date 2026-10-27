@@ -7,6 +7,10 @@ access token to copy into the client.
 The owner still signs in to the admin page with a one-time code or admin
 password. WhatsApp phones remain linked through QR/phone pairing.
 
+Client-specific guides: [Claude Code](CLAUDE_CODE.md),
+[Claude Desktop](CLAUDE_DESKTOP.md), and [Codex Desktop](CODEX_DESKTOP.md).
+Codex CLI steps are [below](#connect-codex).
+
 ## Server setup
 
 Use an HTTPS address reachable from your client, through a TLS reverse

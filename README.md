@@ -95,12 +95,13 @@ across container restarts.
 Open **Connect client** in the admin sidebar. It shows your MCP endpoint and
 the setup instructions for your server's authentication mode.
 
-| Client | How to connect |
+| Client | Setup guide |
 | --- | --- |
-| Codex or Claude Code on your computer | Use the endpoint and configuration shown in **Connect client**. The default setup uses a static access token. |
-| Codex with browser sign-in | Enable HTTPS and OAuth, then add the endpoint and run `codex mcp login whatsapp`. See [OAuth setup](docs/OAUTH.md). |
-| ChatGPT or Claude remote connectors | Use a **publicly reachable HTTPS endpoint** with OAuth. Choose **Register automatically (DCR)** and scope `whatsapp`. See [remote OAuth clients](docs/OAUTH.md#chatgpt-and-claude-remote-connectors). |
-| Claude Desktop on a private network | Use the [local OAuth bridge](docs/OAUTH.md#claude-desktop-over-a-private-network). |
+| Codex CLI | [OAuth sign-in](docs/OAUTH.md#connect-codex), or use the static-token configuration shown in **Connect client** |
+| Codex Desktop | [Desktop MCP setup and OAuth](docs/CODEX_DESKTOP.md) |
+| Claude Code | [HTTP MCP setup and OAuth](docs/CLAUDE_CODE.md) |
+| Claude Desktop | [Public connector or private local bridge](docs/CLAUDE_DESKTOP.md) |
+| ChatGPT custom MCP plugin | [Public HTTPS and OAuth registration](docs/OAUTH.md#chatgpt-and-claude-remote-connectors) |
 
 A private Tailscale Serve address is reachable by devices in your tailnet.
 Cloud-backed remote connectors need a public route, such as Tailscale Funnel,
@@ -253,7 +254,10 @@ account sessions, cached messages, and media in its persistent data volume.
 
 ## Documentation
 
-- [OAuth and client approval](docs/OAUTH.md)
+- [Shared OAuth setup and Codex CLI sign-in](docs/OAUTH.md)
+- [Claude Code OAuth sign-in](docs/CLAUDE_CODE.md)
+- [Claude Desktop OAuth sign-in](docs/CLAUDE_DESKTOP.md)
+- [Codex Desktop OAuth sign-in](docs/CODEX_DESKTOP.md)
 - [Client configuration and media transfers](docs/CLIENTS.md)
 - [Remote access](docs/REMOTE_ACCESS.md)
 - [Backups, updates, and recovery](docs/OPERATIONS.md)

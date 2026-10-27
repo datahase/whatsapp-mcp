@@ -2,10 +2,16 @@
 
 ## OAuth (recommended when HTTPS is configured)
 
-For browser sign-in without copying a static token, follow the
-[OAuth guide](OAUTH.md). Codex uses `codex mcp login whatsapp` after adding the
-server's HTTPS endpoint. The examples below cover static-token mode and manual
-media transfers; they are not needed for OAuth client login.
+Choose the guide for your client:
+
+- [Codex CLI](OAUTH.md#connect-codex)
+- [Codex Desktop](CODEX_DESKTOP.md)
+- [Claude Code](CLAUDE_CODE.md)
+- [Claude Desktop](CLAUDE_DESKTOP.md)
+
+[Shared OAuth setup](OAUTH.md) covers server settings, approval scope and
+revocation. The examples below cover static-token mode and manual media
+transfers. Default installations use static tokens until HTTPS/OAuth is enabled.
 
 ## Start in the browser
 
