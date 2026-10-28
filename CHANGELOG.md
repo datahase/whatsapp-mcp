@@ -5,6 +5,13 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-28
+
+### Fixed
+- Advertise `WhatsApp MCP` in companion pairing metadata instead of the library
+  default device name. Existing sessions are preserved; an older phone entry
+  may keep its previous label until relinked.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added
