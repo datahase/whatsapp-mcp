@@ -63,7 +63,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends $pkgs; rm -rf /var/lib/apt/lists/*
 WORKDIR /ff
 RUN set -eux; \
-    curl -fsSLo ff.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
+    (curl -4 --retry 3 --retry-all-errors --retry-delay 3 --connect-timeout 20 --max-time 180 -fsSLo ff.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" || curl -4 --retry 3 --retry-all-errors --retry-delay 3 --connect-timeout 20 --max-time 180 -fsSLo ff.tar.xz "https://www.ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"); \
     echo "${FFMPEG_SHA256}  ff.tar.xz" | sha256sum -c -; \
     tar -xJf ff.tar.xz --strip-components=1; rm ff.tar.xz; \
     case "$TARGETARCH" in arm64) triple=aarch64-linux-gnu; arch=aarch64 ;; amd64) triple=x86_64-linux-gnu; arch=x86_64 ;; esac; \

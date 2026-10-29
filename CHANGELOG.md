@@ -6,6 +6,8 @@ before 1.0, minor versions may contain breaking changes.
 ## [0.6.1] - 2026-10-29
 
 ### Fixed
+- Retry interrupted FFmpeg source downloads with an alternate official hostname,
+  keeping the pinned source checksum verification.
 - Show current synced contact names in chat lists instead of stale numeric
   identifiers, including contacts stored under linked IDs or mapped phone IDs.
 - Preserve group names and chat selection identifiers; retain identifier
