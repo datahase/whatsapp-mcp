@@ -3,6 +3,14 @@
 All notable changes are recorded here. Versions follow semantic versioning;
 before 1.0, minor versions may contain breaking changes.
 
+## [0.6.1] - 2026-10-29
+
+### Fixed
+- Show current synced contact names in chat lists instead of stale numeric
+  identifiers, including contacts stored under linked IDs or mapped phone IDs.
+- Preserve group names and chat selection identifiers; retain identifier
+  fallbacks when a contact name is unavailable.
+
 ## [0.6.0] - 2026-10-29
 
 ### Added

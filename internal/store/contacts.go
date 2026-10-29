@@ -1,6 +1,9 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"strings"
+)
 
 // contactNameExpr coalesces the whatsmeow_contacts name columns in preference
 // order: the saved address-book name first, then push name, first name, and
@@ -14,14 +17,24 @@ func (s *Store) ContactName(jid string) string {
 	if s.whatsmeowDB == nil {
 		return ""
 	}
-	jid = s.ResolveLIDToJID(jid)
-	var name sql.NullString
-	err := s.whatsmeowDB.QueryRow(
-		`SELECT `+contactNameExpr+` FROM whatsmeow_contacts WHERE their_jid = ?`, jid).Scan(&name)
-	if err != nil || !name.Valid {
-		return ""
+	resolved := s.ResolveLIDToJID(jid)
+	for index, candidate := range []string{resolved, jid} {
+		if index == 1 && candidate == resolved {
+			continue
+		}
+		var name sql.NullString
+		if s.whatsmeowDB.QueryRow(`SELECT `+contactNameExpr+` FROM whatsmeow_contacts WHERE their_jid=?`, candidate).Scan(&name) == nil && name.Valid && strings.TrimSpace(name.String) != "" {
+			return strings.TrimSpace(name.String)
+		}
 	}
-	return name.String
+	// Some synced contact names are keyed by LID even after a chat resolves to a phone JID.
+	if strings.HasSuffix(resolved, "@s.whatsapp.net") {
+		var name sql.NullString
+		if s.whatsmeowDB.QueryRow(`SELECT `+contactNameExpr+` FROM whatsmeow_contacts JOIN whatsmeow_lid_map m ON their_jid=m.lid || '@lid' WHERE m.pn=? AND (`+contactNameExpr+`) IS NOT NULL LIMIT 1`, jidUser(resolved)).Scan(&name) == nil && name.Valid {
+			return strings.TrimSpace(name.String)
+		}
+	}
+	return ""
 }
 
 // searchContactNames returns address-book contacts whose name or JID matches
@@ -55,4 +68,14 @@ func (s *Store) searchContactNames(pattern string) map[string]string {
 		}
 	}
 	return out
+}
+
+// Resolve names at read time so an early numeric cache entry does not hide
+// a contact name synced later. Never substitute a member name for a group.
+func (s *Store) enrichChatName(c *Chat) {
+	if strings.HasSuffix(c.JID, "@s.whatsapp.net") || strings.HasSuffix(c.JID, "@lid") {
+		if name := s.ContactName(c.JID); name != "" {
+			c.Name = name
+		}
+	}
 }

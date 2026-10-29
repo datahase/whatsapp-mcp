@@ -19,9 +19,9 @@ This selection controls monitoring and vectorization. It does **not** restrict t
 The normal Docker image stays small. The history variant adds Python and CPU PyTorch. Pull the versioned variant from either registry:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.6.0-history
+docker pull datahase/whatsapp-mcp:0.6.1-history
 # Alternative registry:
-docker pull ghcr.io/datahase/whatsapp-mcp:0.6.0-history
+docker pull ghcr.io/datahase/whatsapp-mcp:0.6.1-history
 ```
 
 From a checkout with an existing private `.env`, start it with:
@@ -30,12 +30,12 @@ From a checkout with an existing private `.env`, start it with:
 docker compose -f compose.yaml -f compose.history.yaml up -d --no-build
 ```
 
-The override selects the history image and enables indexing. For GHCR, set `WHATSAPP_MCP_HISTORY_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.0-history` in `.env`. The core tags remain `0.6.0`, `0.6`, and `latest`; history tags are `0.6.0-history`, `0.6-history`, and `history`.
+The override selects the history image and enables indexing. For GHCR, set `WHATSAPP_MCP_HISTORY_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.1-history` in `.env`. The core tags remain `0.6.1`, `0.6`, and `latest`; history tags are `0.6.1-history`, `0.6-history`, and `history`.
 
 For the one-command CLI, create a private environment file using placeholders from `.env.example`. Set `HISTORY_ENABLED=true`, `MEM_LIMIT=4g` and `CPUS=2.0`, then use the existing environment-file setup option:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.0-history --env-file /path/to/private-history.env
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.1-history --env-file /path/to/private-history.env
 ```
 
 This configures deployment using the existing setup checks. Review its network mode and existing installation selection before proceeding. No answer-generation key is required for local retrieval.

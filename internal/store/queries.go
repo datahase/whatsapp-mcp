@@ -164,6 +164,7 @@ func (s *Store) ListChats(ctx context.Context, query string, limit, page int, in
 			return nil, err
 		}
 		c.PhoneNumber = s.ResolveJIDToPhone(c.JID)
+		s.enrichChatName(&c)
 		result = append(result, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -187,6 +188,7 @@ func (s *Store) GetChat(ctx context.Context, jid string, includeLastMessage bool
 		return nil, fmt.Errorf("get chat: %w", err)
 	}
 	c.PhoneNumber = s.ResolveJIDToPhone(c.JID)
+	s.enrichChatName(&c)
 	return &c, nil
 }
 
