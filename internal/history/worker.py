@@ -23,7 +23,8 @@ for line in sys.stdin:
   r=json.loads(line);texts=r['texts'];task=r['task']
   if not isinstance(texts,list) or not 0<len(texts)<=16 or any(not isinstance(t,str) or len(t)>10000 for t in texts):raise ValueError()
   with contextlib.redirect_stdout(sys.stderr):
-   result=model.encode(texts,prompt=prompts[task],batch_size=8,truncate_dim=a.dimensions,normalize_embeddings=True,show_progress_bar=False,convert_to_numpy=True)
+   # Explicit text prevents URL/path auto-detection from fetching or decoding media.
+   result=model.encode([{'text':text} for text in texts],prompt=prompts[task],batch_size=8,truncate_dim=a.dimensions,normalize_embeddings=True,show_progress_bar=False,convert_to_numpy=True)
   print(json.dumps({'vectors':result.tolist()},allow_nan=False),flush=True)
  except Exception:
   print(json.dumps({'error':'Local embedding failed. Input was not logged.'}),flush=True)

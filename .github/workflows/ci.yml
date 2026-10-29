@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Text-only embedding protocol regression
+        run: python3 scripts/history/test-worker.py
       - name: Host management CLI
         run: python3 scripts/test-cli.py
       - uses: pnpm/action-setup@v4
@@ -29,6 +31,8 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
+      - name: Chat picker regression tests
+        run: node --experimental-strip-types --test web/src/lib/history-chats.test.mjs
       - name: Build static admin frontend
         run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
       - uses: actions/setup-go@v5

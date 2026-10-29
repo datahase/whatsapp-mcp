@@ -39,6 +39,9 @@ func TestRealModelSyntheticBenchmark(t *testing.T) {
 	_ = st.StoreChat("synthetic@g.us", "Synthetic benchmark", time.Now())
 	_ = st.StoreChat("excluded@g.us", "Synthetic excluded", time.Now())
 	examples := []struct{ id, text, query string }{
+		{"video-link", "https://example.invalid/synthetic.mp4", "https://example.invalid/synthetic.mp4"},
+		{"image-link", "https://example.invalid/synthetic.jpg", "https://example.invalid/synthetic.jpg"},
+		{"audio-link", "https://example.invalid/synthetic.mp3", "https://example.invalid/synthetic.mp3"},
 		{"budget", "The project spending ceiling is 4200 synthetic units. Finance approved it.", "What is the approved budget?"},
 		{"launch", "We decided to release the synthetic product next Thursday after QA.", "When is the product launch scheduled?"},
 		{"malayalam", "റിപ്പോർട്ട് തയ്യാറാക്കാനുള്ള ചുമതല സിന്തറ്റിക് സംഘത്തിനാണ്. ബജറ്റ് അംഗീകരിച്ചു.", "റിപ്പോർട്ട് തയ്യാറാക്കുന്നത് ആരാണ്?"},
@@ -139,7 +142,7 @@ func TestRealModelSyntheticBenchmark(t *testing.T) {
 			workerRSSKB, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
 		}
 	}
-	metric := map[string]any{"fixture": "synthetic-history-v1", "messages": 30, "queries": len(examples), "recall_at_1": float64(hit1) / float64(len(examples)), "recall_at_5": float64(hit5) / float64(len(examples)), "indexing_seconds_including_model_load": indexing.Seconds(), "query_latency_ms": latencies, "go_heap_bytes": ms.HeapAlloc, "worker_rss_kib_sample": workerRSSKB, "sqlite_bytes_including_wal": indexBytes, "model": embed.Manifest(), "generation": "mocked separately; no hosted model or paid work", "mock_valid_citations_accepted": validCitations, "mock_fabricated_quotes_rejected": rejectedFabrications}
+	metric := map[string]any{"fixture": "synthetic-history-v2-urltext", "messages": len(examples) + 24, "queries": len(examples), "recall_at_1": float64(hit1) / float64(len(examples)), "recall_at_5": float64(hit5) / float64(len(examples)), "indexing_seconds_including_model_load": indexing.Seconds(), "query_latency_ms": latencies, "go_heap_bytes": ms.HeapAlloc, "worker_rss_kib_sample": workerRSSKB, "sqlite_bytes_including_wal": indexBytes, "model": embed.Manifest(), "generation": "mocked separately; no hosted model or paid work", "mock_valid_citations_accepted": validCitations, "mock_fabricated_quotes_rejected": rejectedFabrications}
 	raw, _ := json.MarshalIndent(metric, "", "  ")
 	t.Log(string(raw))
 	if output := os.Getenv("HISTORY_BENCHMARK_OUTPUT"); output != "" {

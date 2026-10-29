@@ -151,24 +151,24 @@ docker pull datahase/whatsapp-mcp:latest
 For a fixed release, or to pull from GHCR instead:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.6.1
-docker pull ghcr.io/datahase/whatsapp-mcp:0.6.1
+docker pull datahase/whatsapp-mcp:0.6.2
+docker pull ghcr.io/datahase/whatsapp-mcp:0.6.2
 ```
 
-Both registries publish `0.6.1`, `0.6`, and `latest`, with `linux/amd64` and
+Both registries publish `0.6.2`, `0.6`, and `latest`, with `linux/amd64` and
 `linux/arm64` variants. Docker selects the variant for your host. To pin the
 image or use GHCR, set one of these in `.env`:
 
 ```sh
-WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.6.1
-# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.1
+WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.6.2
+# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.2
 ```
 
 Pulling an image downloads it. `whatsapp-mcp setup` provides configuration and persistent storage.
 To deploy a specific image from any folder:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.1 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.2 --yes
 ```
 
 To build from source instead, clone this repository, run
@@ -243,8 +243,8 @@ require a separate external-provider opt-in. An all-actions review walks cached
 history chronologically rather than treating top search results as complete.
 No search automatically transcribes audio or sends messages.
 
-Pull the optional runtime with `docker pull datahase/whatsapp-mcp:0.6.1-history`
-(or `ghcr.io/datahase/whatsapp-mcp:0.6.1-history`). It needs substantially more memory
+Pull the optional runtime with `docker pull datahase/whatsapp-mcp:0.6.2-history`
+(or `ghcr.io/datahase/whatsapp-mcp:0.6.2-history`). It needs substantially more memory
 than the default Go container. See [setup, privacy and verification](docs/HISTORY.md).
 
 ## Optional AI features
@@ -262,7 +262,7 @@ Follow the [backup and update guide](docs/OPERATIONS.md) before upgrading.
 From any folder, choose the new release image:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.1 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.2 --yes
 ```
 
 Setup backs up the existing `.env`, validates configuration, and waits for

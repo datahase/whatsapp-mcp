@@ -19,9 +19,9 @@ This selection controls monitoring and vectorization. It does **not** restrict t
 The normal Docker image stays small. The history variant adds Python and CPU PyTorch. Pull the versioned variant from either registry:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.6.1-history
+docker pull datahase/whatsapp-mcp:0.6.2-history
 # Alternative registry:
-docker pull ghcr.io/datahase/whatsapp-mcp:0.6.1-history
+docker pull ghcr.io/datahase/whatsapp-mcp:0.6.2-history
 ```
 
 From a checkout with an existing private `.env`, start it with:
@@ -30,12 +30,12 @@ From a checkout with an existing private `.env`, start it with:
 docker compose -f compose.yaml -f compose.history.yaml up -d --no-build
 ```
 
-The override selects the history image and enables indexing. For GHCR, set `WHATSAPP_MCP_HISTORY_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.1-history` in `.env`. The core tags remain `0.6.1`, `0.6`, and `latest`; history tags are `0.6.1-history`, `0.6-history`, and `history`.
+The override selects the history image and enables indexing. For GHCR, set `WHATSAPP_MCP_HISTORY_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.2-history` in `.env`. The core tags remain `0.6.2`, `0.6`, and `latest`; history tags are `0.6.2-history`, `0.6-history`, and `history`.
 
 For the one-command CLI, create a private environment file using placeholders from `.env.example`. Set `HISTORY_ENABLED=true`, `MEM_LIMIT=4g` and `CPUS=2.0`, then use the existing environment-file setup option:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.1-history --env-file /path/to/private-history.env
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.2-history --env-file /path/to/private-history.env
 ```
 
 This configures deployment using the existing setup checks. Review its network mode and existing installation selection before proceeding. No answer-generation key is required for local retrieval.
@@ -192,3 +192,20 @@ go test -count=1 -run TestRealModelSyntheticBenchmark -v ./internal/history
 Measured on a development CPU host: 30 synthetic messages, six English/Malayalam/code-switched queries, 256 dimensions. Recall@1 and recall@5 were both 6/6. Indexing including model load took 8.60 s. Warm search took 35.9–52.9 ms. Sampled worker RSS was 1254736 KiB (about 1.20 GiB), Go heap about 2.9 MiB, and SQLite plus WAL 2611896 bytes (about 2.49 MiB). Citation validation also accepts six synthetic valid responses and rejects six fabricated quotes; these responses are mocked, not live-model interpretations. This is a small deterministic retrieval smoke benchmark, not a production scale or answer-groundedness score.
 
 Synthetic tests cover account/chat isolation, existing-tool access outside indexing selection, multilingual/transcript metadata, duplicate sync, reply context, later completion, ambiguous ownership, tentative dates, fabricated citations, prompt injection, edits/deletion, access revocation, interrupted indexing, model-space changes, session retention, review cursor integrity, cancellation and billing/restart behavior. See [verification results](HISTORY_VERIFICATION.md) for actual final check results and current limitations.
+
+### Indexing recovery and conversation search
+
+Use **Search conversations** to filter cached chat names or numbers. Named chats
+appear before identifier-only entries. Filtering does not change your selected
+conversations. Names depend on the contacts and group metadata WhatsApp has synced.
+
+**Resume indexing** retries local indexing from its durable pending-message queue.
+Completed embeddings remain available. Media links are indexed as text and never
+downloaded by the embedding worker. Existing media-cache and missing-transcript
+warnings describe coverage, not an instruction to download or transcribe media.
+Transcription remains a separate explicit action and may incur provider charges.
+
+The text-only input wrapper follows the [Sentence Transformers input format](https://sbert.net/docs/input_formats.html#text).
+Run `python3 scripts/history/test-worker.py` for the dependency-free protocol
+regression, `node --experimental-strip-types --test web/src/lib/history-chats.test.mjs`
+for picker checks, and the optional real-model test above for live local embeddings.

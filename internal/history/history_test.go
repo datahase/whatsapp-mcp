@@ -748,3 +748,29 @@ func TestDeletedScopeDropsQueuedAuthorization(t *testing.T) {
 		}
 	}
 }
+
+func TestResumeFailedIndexRetainsProgressAndAuthorization(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.add("alpha", "design@g.us", "resume-source", "Synthetic searchable text", 0, "")
+	f.selectChat("alpha", "design@g.us")
+	f.s.Close()
+	// Use an idle service to inspect scheduling without worker races.
+	f.s = f.open(f.embed, false)
+	st := f.stores["alpha"]
+	var id string
+	if err := st.DB().QueryRow("SELECT id FROM history_jobs WHERE kind='index' LIMIT 1").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().Exec("UPDATE history_jobs SET status='failed',error='synthetic failure',processed=42 WHERE id=?", id); err != nil {
+		t.Fatal(err)
+	}
+	j, err := f.s.StartIndex(ctx, Scope{"alpha", []string{"design@g.us"}}, false)
+	if err != nil || j.ID != id || j.Status != "queued" || j.Processed != 42 || j.Error != "" {
+		t.Fatalf("resume: %+v %v", j, err)
+	}
+	f.blocked.Store(true)
+	if _, err = f.s.StartIndex(ctx, Scope{"alpha", []string{"design@g.us"}}, false); err == nil {
+		t.Fatal("revoked account resumed")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/datahase/whatsapp-mcp/internal/store"
@@ -72,6 +73,23 @@ func (s *Service) StartIndex(ctx context.Context, scope Scope, syncHistory bool)
 	var id string
 	if st.DB().QueryRow("SELECT id FROM history_jobs WHERE kind='index' AND status IN ('queued','running') ORDER BY created LIMIT 1").Scan(&id) == nil {
 		return s.Job(ctx, scope.AccountID, id)
+	}
+	// Resume a failed job only within the same still-authorized selection.
+	// Dirty rows are the durable cursor; completed source upserts stay intact.
+	var raw string
+	if st.DB().QueryRow("SELECT id,request_json FROM history_jobs WHERE kind='index' AND status='failed' ORDER BY created DESC,id DESC LIMIT 1").Scan(&id, &raw) == nil {
+		var r jobRequest
+		if json.Unmarshal([]byte(raw), &r) == nil && r.ScopeEpoch == epoch(st.DB(), "scope_epoch") &&
+			r.Scope.AccountID == scope.AccountID && slices.Equal(canonical(r.Scope.ChatIDs), canonical(scope.ChatIDs)) && !syncHistory {
+			if _, err = st.DB().ExecContext(ctx, "UPDATE history_jobs SET status='queued',error='',updated=? WHERE id=? AND status='failed'", time.Now().Unix(), id); err != nil {
+				return Job{}, err
+			}
+			s.mu.Lock()
+			s.guards[scope.AccountID+"/"+id] = context.WithoutCancel(ctx)
+			s.mu.Unlock()
+			s.signal()
+			return s.Job(ctx, scope.AccountID, id)
+		}
 	}
 	return s.insertJob(ctx, "index", jobRequest{Scope: scope, RequestSync: syncHistory})
 }
@@ -208,6 +226,9 @@ func (s *Service) worker() {
 					state = "cancelled"
 				}
 				msg := "History job failed; inspect configuration or retry. No message content was logged."
+				if errors.Is(err, errLocalEmbedding) {
+					msg = errLocalEmbedding.Error()
+				}
 				if errors.Is(err, ErrScope) {
 					msg = ErrScope.Error()
 				}

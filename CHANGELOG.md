@@ -3,6 +3,20 @@
 All notable changes are recorded here. Versions follow semantic versioning;
 before 1.0, minor versions may contain breaking changes.
 
+## [0.6.2] - 2026-10-29
+
+### Fixed
+- Treat all history messages and queries as explicit text, including media URLs.
+  Prevent automatic media decoding/downloads from blocking local indexing.
+- Resume failed indexing in the same authorized scope without losing completed
+  progress, and show the current indexing attempt rather than stale failures.
+
+### Added
+- Search the history chat picker by name or number, with named chats first and
+  selection counts that remain stable while filtering.
+- Synthetic URL-input regression coverage for document, search and question
+  embedding paths.
+
 ## [0.6.1] - 2026-10-29
 
 ### Fixed

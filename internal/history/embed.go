@@ -21,6 +21,8 @@ import (
 	"github.com/datahase/whatsapp-mcp/internal/config"
 )
 
+var errLocalEmbedding = errors.New("local text embedding failed; verify the pinned model/runtime and resume indexing. Existing indexed messages are retained")
+
 // Embedder never generates answers and must not send content to a hosted API.
 type Embedder interface {
 	Embed(context.Context, []string, string) ([][]float32, error)
@@ -194,7 +196,7 @@ func (e *LocalEmbedder) Embed(ctx context.Context, texts []string, task string) 
 		Error   string      `json:"error"`
 	}
 	if json.Unmarshal(b, &v) != nil || v.Error != "" || len(v.Vectors) != len(texts) {
-		return nil, errors.New("local embedding worker returned invalid output")
+		return nil, errLocalEmbedding
 	}
 	for i := range v.Vectors {
 		if err := normalize(v.Vectors[i], e.manifest.Dimensions); err != nil {

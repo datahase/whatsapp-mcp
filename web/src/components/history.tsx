@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { filterChats } from "@/lib/history-chats";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -216,6 +217,7 @@ export default function HistoryPanel({
   selectedAccount.current = account;
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState("selected");
+  const [chatSearch, setChatSearch] = useState("");
   const [chats, setChats] = useState<string[]>([]);
   const [session, setSession] = useState("");
   const [consent, setConsent] = useState(false);
@@ -289,6 +291,7 @@ export default function HistoryPanel({
     configured.current = "";
     setStatus(null);
     setChats([]);
+    setChatSearch("");
     setSession("");
     setConsent(false);
     setQuestion("");
@@ -338,6 +341,11 @@ export default function HistoryPanel({
       return v.session_id;
     }
   }
+  const visibleChats = filterChats(status?.chats || [], chatSearch);
+  // Keep the current index attempt visible; older failed attempts do not
+  // describe current coverage after a successful resume.
+  const visibleJobs = status?.jobs.filter((j, i, jobs) =>
+    j.kind !== "index" || jobs.findIndex((x) => x.kind === "index") === i) || [];
   const coverage = status?.coverage;
   const activeScope =
     status?.sessions.find((s) => s.session_id === session)?.chat_ids ||
@@ -436,9 +444,18 @@ export default function HistoryPanel({
               ))}
             </div>
             {mode === "selected" && (
-              <div className="history-chat-list mt-4">
-                {status.chats.length ? (
-                  status.chats.map((c) => (
+              <div className="mt-4">
+                <label className="history-field">
+                  Search conversations
+                  <Input type="search" placeholder="Search by name or number"
+                    value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} />
+                </label>
+                <p className="subtext text-xs mt-2" role="status">
+                  {chats.length} selected · {visibleChats.length} of {status.chats.length} shown. Named chats appear first.
+                </p>
+                <div className="history-chat-list mt-3">
+                {visibleChats.length ? (
+                  visibleChats.map((c) => (
                     <label key={c.jid} className="history-check">
                       <input
                         type="checkbox"
@@ -456,10 +473,10 @@ export default function HistoryPanel({
                   ))
                 ) : (
                   <p className="subtext">
-                    No chats are cached yet. Wait for WhatsApp to provide
-                    available history.
+                    {status.chats.length ? "No conversations match your search." : "No chats are cached yet. Wait for WhatsApp to provide available history."}
                   </p>
                 )}
+                </div>
               </div>
             )}
             <div className="flex gap-2 mt-4">
@@ -547,7 +564,7 @@ export default function HistoryPanel({
                 Resume indexing{sync ? " and request sync" : ""}
               </Button>
               <div className="mt-4">
-                {status.jobs.map((j) => (
+                {visibleJobs.map((j) => (
                   <div className="history-job" key={j.job_id}>
                     <div>
                       <span>

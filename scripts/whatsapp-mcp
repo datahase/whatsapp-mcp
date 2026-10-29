@@ -32,7 +32,7 @@ Usage: whatsapp-mcp setup [OPTIONS]
   --https-port 443|8443|10000          Tailscale HTTPS port (default: 443)
   --dir PATH                          Configuration directory
   --project NAME                      Compose project (default: whatsapp-mcp)
-  --image REFERENCE                   Image to deploy (default: release 0.6.1)
+  --image REFERENCE                   Image to deploy (default: release 0.6.2)
   --env-file PATH                     Import advanced settings on first setup
   --no-pull                           Use an image already present locally
   --yes                               Use defaults without prompting
@@ -164,7 +164,7 @@ setup_deployment() (
         fi
     fi
     if [ -z "$setup_image" ]; then setup_image=$(setup_env_get WHATSAPP_MCP_IMAGE); fi
-    if [ -z "$setup_image" ]; then setup_image=datahase/whatsapp-mcp:0.6.1; fi
+    if [ -z "$setup_image" ]; then setup_image=datahase/whatsapp-mcp:0.6.2; fi
     case "$setup_image" in ''|*[!a-zA-Z0-9_./:@-]*|-*) fail 'Invalid image reference.' ;; esac
     setup_old_port=$(setup_env_get HOST_PORT)
     if [ -z "$setup_port" ]; then setup_port=${setup_old_port:-8765}; fi
@@ -196,7 +196,7 @@ setup_deployment() (
     fi
     command -v curl >/dev/null 2>&1 || fail 'curl is required to download deployment files.'
     if [ ! -f "$setup_dir/compose.yaml" ]; then
-        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.6.1/compose.yaml --output "$setup_tmp/compose.yaml"
+        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location https://raw.githubusercontent.com/datahase/whatsapp-mcp/v0.6.2/compose.yaml --output "$setup_tmp/compose.yaml"
         cp "$setup_tmp/compose.yaml" "$setup_dir/compose.yaml"
     fi
     setup_previous_image=
