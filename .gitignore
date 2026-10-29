@@ -52,3 +52,13 @@ cover.out
 /web/public/brand/
 /web/tsconfig.tsbuildinfo
 /internal/httpapi/static/*
+
+# Local model/runtime caches must never be included in source archives.
+**/__pycache__/
+*.pyc
+*.safetensors
+*.gguf
+/.cache/
+/models/
+/.venv/
+/.venv-history/

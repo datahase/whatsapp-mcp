@@ -151,24 +151,24 @@ docker pull datahase/whatsapp-mcp:latest
 For a fixed release, or to pull from GHCR instead:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.5.0
-docker pull ghcr.io/datahase/whatsapp-mcp:0.5.0
+docker pull datahase/whatsapp-mcp:0.6.0
+docker pull ghcr.io/datahase/whatsapp-mcp:0.6.0
 ```
 
-Both registries publish `0.5.0`, `0.5`, and `latest`, with `linux/amd64` and
+Both registries publish `0.6.0`, `0.6`, and `latest`, with `linux/amd64` and
 `linux/arm64` variants. Docker selects the variant for your host. To pin the
 image or use GHCR, set one of these in `.env`:
 
 ```sh
-WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.5.0
-# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.5.0
+WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.6.0
+# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.6.0
 ```
 
 Pulling an image downloads it. `whatsapp-mcp setup` provides configuration and persistent storage.
 To deploy a specific image from any folder:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.5.0 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.0 --yes
 ```
 
 To build from source instead, clone this repository, run
@@ -230,6 +230,23 @@ Run these on the Docker host from any folder:
 If multiple instances exist, select one with
 `whatsapp-mcp --container NAME login`. The CLI never guesses which one to use.
 
+## Chat with your WhatsApp history
+
+The optional [history feature](docs/HISTORY.md) uses local EmbeddingGemma 2
+embeddings and per-account SQLite indexes. After linking an account, choose all
+available chats or selected conversations to monitor. These choices control
+indexing only; existing WhatsApp MCP tools keep their current access.
+
+Search past discussions, inspect exact message/transcript sources, and use
+retrieval-only tools with your MCP client's own model. Server-generated answers
+require a separate external-provider opt-in. An all-actions review walks cached
+history chronologically rather than treating top search results as complete.
+No search automatically transcribes audio or sends messages.
+
+Pull the optional runtime with `docker pull datahase/whatsapp-mcp:0.6.0-history`
+(or `ghcr.io/datahase/whatsapp-mcp:0.6.0-history`). It needs substantially more memory
+than the default Go container. See [setup, privacy and verification](docs/HISTORY.md).
+
 ## Optional AI features
 
 Messaging works without an AI key. To enable voice-note transcription,
@@ -245,7 +262,7 @@ Follow the [backup and update guide](docs/OPERATIONS.md) before upgrading.
 From any folder, choose the new release image:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.5.0 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.6.0 --yes
 ```
 
 Setup backs up the existing `.env`, validates configuration, and waits for

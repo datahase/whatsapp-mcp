@@ -32,3 +32,8 @@ web/out/
 web/public/brand/
 web/*.tsbuildinfo
 internal/httpapi/static/
+# Only the optional runtime's dependency manifest is needed from scripts.
+!scripts/
+scripts/**
+!scripts/history/
+!scripts/history/requirements.txt

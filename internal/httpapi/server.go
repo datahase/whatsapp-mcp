@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
 	"github.com/datahase/whatsapp-mcp/internal/ai"
 	"github.com/datahase/whatsapp-mcp/internal/authflow"
+	"github.com/datahase/whatsapp-mcp/internal/history"
 	wamcp "github.com/datahase/whatsapp-mcp/internal/mcp"
 )
 
@@ -37,6 +39,7 @@ type Config struct {
 	Manager       *accounts.Manager
 	MCP           http.Handler
 	AI            *ai.Service
+	History       *history.Service
 	Version       string
 	Log           waLog.Logger
 	// DataDir is where one-time sign-in codes are read from.
@@ -71,6 +74,7 @@ func New(cfg Config) *Server {
 	s.mux.Handle("GET /api/status", s.bearer(http.HandlerFunc(s.status)))
 	s.mountAdmin()
 	s.mountOAuth()
+	s.mountHistory()
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin", http.StatusSeeOther) })
 	return s
 }
@@ -150,7 +154,10 @@ func (s *Server) bearer(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		guard := func() bool {
+			return !s.cfg.OAuthOnly && equalSecret(got, s.cfg.Token) || s.cfg.OAuth != nil && s.cfg.OAuth.Validate(context.Background(), got)
+		}
+		next.ServeHTTP(w, r.WithContext(history.WithGuard(r.Context(), guard)))
 	})
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datahase/whatsapp-mcp/internal/history"
 	wamcp "github.com/datahase/whatsapp-mcp/internal/mcp"
 	"github.com/skip2/go-qrcode"
 )
@@ -69,7 +70,11 @@ func (s *Server) admin(h adminHandler) http.HandlerFunc {
 			return
 		}
 		if r.Method == http.MethodPost {
-			r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+			limit := int64(16 << 10)
+			if strings.HasPrefix(r.URL.Path, "/admin/api/history/") {
+				limit = 128 << 10
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			csrf := r.Header.Get("X-CSRF-Token")
 			if csrf == "" {
 				csrf = r.PostFormValue("csrf")
@@ -79,7 +84,7 @@ func (s *Server) admin(h adminHandler) http.HandlerFunc {
 				return
 			}
 		}
-		h(w, r, sess)
+		h(w, r.WithContext(history.WithGuard(r.Context(), func() bool { return s.sessions.get(c.Value) != nil })), sess)
 	}
 }
 

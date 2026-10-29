@@ -61,6 +61,18 @@ func consumeLoginCode(dataDir, code string) bool {
 		return false
 	}
 	p := codeFile(dataDir, code)
+	// Claim before reading. Some filesystems can report success for concurrent
+	// removals; deletion alone must not be the one-time-use arbitration.
+	claim, err := os.OpenFile(p+".claim", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false
+	}
+	_, writeErr := claim.WriteString(strconv.FormatInt(time.Now().Add(LoginCodeTTL).Unix(), 10))
+	closeErr := claim.Close()
+	defer os.Remove(p + ".claim")
+	if writeErr != nil || closeErr != nil {
+		return false
+	}
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		return false
@@ -81,6 +93,13 @@ func pruneCodes(dataDir string) {
 	now := time.Now().Unix()
 	for _, e := range entries {
 		p := filepath.Join(codeDir(dataDir), e.Name())
+		if strings.HasSuffix(e.Name(), ".claim") {
+			// Never prune a newly created claim while its owner writes it.
+			if info, err := e.Info(); err == nil && info.ModTime().Before(time.Now().Add(-LoginCodeTTL)) {
+				_ = os.Remove(p)
+			}
+			continue
+		}
 		raw, err := os.ReadFile(p)
 		if exp, perr := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64); err != nil || perr != nil || exp < now {
 			_ = os.Remove(p)

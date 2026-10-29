@@ -1,0 +1,6 @@
+# Optional local worker. Kept out of the default Go image.
+sentence-transformers==6.2.0
+transformers==5.21.0
+torch==2.15.0
+pillow==12.3.0
+torchvision==0.29.1

@@ -158,20 +158,23 @@ func (c *Client) normalizeIncomingMessage(
 	}
 
 	content := extractTextContent(raw)
+	reply := messageContextInfo(raw)
 	mediaType, filename, url, directPath, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(raw)
 
 	return normalizedMessage{
 		msg: store.Message{
-			ID:         msgID,
-			ChatJID:    chatJID,
-			Sender:     sender,
-			Content:    content,
-			Timestamp:  timestamp,
-			IsFromMe:   isFromMe,
-			MediaType:  mediaType,
-			Filename:   filename,
-			URL:        url,
-			DirectPath: directPath,
+			ID:           msgID,
+			ReplyID:      reply.GetStanzaID(),
+			ReplyChatJID: reply.GetRemoteJID(),
+			ChatJID:      chatJID,
+			Sender:       sender,
+			Content:      content,
+			Timestamp:    timestamp,
+			IsFromMe:     isFromMe,
+			MediaType:    mediaType,
+			Filename:     filename,
+			URL:          url,
+			DirectPath:   directPath,
 		},
 		mediaKey:      mediaKey,
 		fileSHA256:    fileSHA256,
@@ -584,4 +587,25 @@ func (c *Client) handlePollVote(msg *events.Message, chatJID, voterJID string) {
 	}
 
 	c.log.Debugf("Recorded poll vote from %s on poll %s with %d selections", c.redactor.JID(voterJID), c.redactor.MsgID(pollID), len(selected))
+}
+
+// Reply metadata is retained for retrieval context; it does not authorize reads
+// outside the selected account/chat scope.
+func messageContextInfo(m *waProto.Message) *waProto.ContextInfo {
+	if x := m.GetExtendedTextMessage().GetContextInfo(); x != nil {
+		return x
+	}
+	if x := m.GetImageMessage().GetContextInfo(); x != nil {
+		return x
+	}
+	if x := m.GetAudioMessage().GetContextInfo(); x != nil {
+		return x
+	}
+	if x := m.GetVideoMessage().GetContextInfo(); x != nil {
+		return x
+	}
+	if x := m.GetDocumentMessage().GetContextInfo(); x != nil {
+		return x
+	}
+	return nil
 }

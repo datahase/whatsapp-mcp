@@ -453,3 +453,127 @@ p {
     transition: none !important;
   }
 }
+
+.history-page {
+  max-width: 1080px;
+}
+.history-section {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+}
+.history-notice {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--muted);
+}
+.history-field {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  max-width: 100%;
+}
+.history-field select {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 10px 12px;
+  min-width: 0;
+  width: 100%;
+}
+.history-check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+.history-check input {
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+.history-chat-list {
+  display: grid;
+  gap: 12px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  padding: 16px;
+  border-radius: 8px;
+}
+.history-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  font-size: 13px;
+}
+.history-metrics strong {
+  font-size: 20px;
+  display: block;
+  margin-bottom: 4px;
+}
+.history-warnings {
+  list-style: disc;
+  padding-left: 20px;
+  color: var(--muted-foreground);
+  margin: 16px 0;
+  font-size: 13px;
+}
+.history-warnings li {
+  margin-top: 6px;
+}
+.history-job {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.history-job small {
+  display: block;
+  margin-top: 4px;
+}
+.history-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.history-evidence {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.history-cite {
+  color: var(--primary);
+  text-decoration: underline;
+  font-size: 12px;
+  margin: 10px 12px 0 0;
+}
+.history-kind {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-bottom: 8px;
+  text-transform: capitalize;
+}
+.history-source-dialog {
+  max-width: 780px;
+}
+.history-source-scroll {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+@media (max-width: 640px) {
+  .history-filters {
+    grid-template-columns: 1fr;
+  }
+  .history-notice {
+    padding: 18px;
+  }
+  .history-job {
+    flex-wrap: wrap;
+  }
+}

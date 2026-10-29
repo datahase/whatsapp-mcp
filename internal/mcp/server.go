@@ -12,6 +12,7 @@ import (
 
 	"github.com/datahase/whatsapp-mcp/internal/accounts"
 	"github.com/datahase/whatsapp-mcp/internal/ai"
+	"github.com/datahase/whatsapp-mcp/internal/history"
 )
 
 // Version is reported as serverInfo.version.
@@ -23,6 +24,17 @@ type Server struct {
 	gem       *ai.Service // nil when analysis is disabled
 	mcp       *server.MCPServer
 	maxInline int64
+	history   *history.Service
+}
+
+// WithHistory adds optional read-only WhatsApp history tools. Index selection
+// never restricts the pre-existing read/send tools.
+func (s *Server) WithHistory(h *history.Service) *Server {
+	s.history = h
+	if h.Enabled() {
+		s.registerHistory()
+	}
+	return s
 }
 
 // NewServer registers the tool allowlist. gem may be nil.

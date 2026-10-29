@@ -64,3 +64,18 @@ clsx, tailwind-merge and tw-animate-css use the MIT license. Lucide icons use
 the ISC license. Their source and pinned dependencies are in `web/` and
 `web/pnpm-lock.yaml`. Frontend packages are build dependencies; their browser
 assets are included in the application binary.
+
+## Optional local history runtime
+
+`Dockerfile.history` adds Python (PSF license), Sentence Transformers and
+Transformers (Apache-2.0), PyTorch and torchvision (BSD-style licenses), Pillow
+(MIT-CMU), and their dependencies. Installed Python distributions include their
+upstream license metadata in the virtual environment; Debian package notices
+remain under `/usr/share/doc`. The normal image does not include this runtime.
+
+EmbeddingGemma 2 weights are downloaded at runtime from
+https://huggingface.co/google/embeddinggemma-2 at the configured immutable
+revision. The model is Apache-2.0; preserve its license and notices if
+redistributing weights. Weights and private model caches are excluded from
+source archives and build contexts. See `docs/HISTORY.md` for the pinned
+runtime, model formatting and compatibility limits.

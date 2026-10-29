@@ -403,6 +403,12 @@ func (s *Store) FindJobByCacheKey(key string) (*Job, error) {
 		ORDER BY CASE status WHEN 'completed' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`, key))
 }
 
+// FindAnyJobByCacheKey also returns failed and interrupted/possibly billed
+// work. History generation uses it to prevent an automatic paid redispatch.
+func (s *Store) FindAnyJobByCacheKey(key string) (*Job, error) {
+	return scanJob(s.db.QueryRow(jobSelect+` WHERE cache_key=? ORDER BY CASE status WHEN 'completed' THEN 0 ELSE 1 END,updated_at DESC LIMIT 1`, key))
+}
+
 // RecoverJobs runs at startup and closes jobs a previous process left open.
 func (s *Store) RecoverJobs() error {
 	now := time.Now().UTC()
@@ -441,7 +447,7 @@ const senderMatch = " AND ((? AND is_from_me = 1) OR (NOT ? AND is_from_me = 0 A
 // RevokeMessage clears the content and media keys of a revoked message. It
 // reports whether a row by that sender was changed.
 func (s *Store) RevokeMessage(chatJID, messageID, sender string, fromMe bool) (bool, error) {
-	r, err := s.db.Exec(`UPDATE messages SET content = '[message deleted by sender]', media_type = NULL, filename = NULL, url = NULL,
+	r, err := s.db.Exec(`UPDATE messages SET deleted=1,content = '[message deleted by sender]', media_type = NULL, filename = NULL, url = NULL,
 		direct_path = NULL, media_key = NULL, file_sha256 = NULL, file_enc_sha256 = NULL, file_length = NULL
 		WHERE chat_jid = ? AND id = ?`+senderMatch, chatJID, messageID, fromMe, fromMe, sender)
 	return affected(r, err)
@@ -449,7 +455,7 @@ func (s *Store) RevokeMessage(chatJID, messageID, sender string, fromMe bool) (b
 
 // EditMessage replaces the text of an edited message by the same sender.
 func (s *Store) EditMessage(chatJID, messageID, content, sender string, fromMe bool) (bool, error) {
-	r, err := s.db.Exec("UPDATE messages SET content = ? WHERE chat_jid = ? AND id = ?"+senderMatch, content, chatJID, messageID, fromMe, fromMe, sender)
+	r, err := s.db.Exec("UPDATE messages SET content = ? WHERE deleted=0 AND chat_jid = ? AND id = ?"+senderMatch, content, chatJID, messageID, fromMe, fromMe, sender)
 	return affected(r, err)
 }
 

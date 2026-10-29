@@ -47,6 +47,13 @@ func openTestStore(t *testing.T) *Store {
 		t.Fatalf("apply seed: %v", err)
 	}
 
+	if _, err := db.Exec(opsSchema); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallHistoryTriggers(db); err != nil {
+		t.Fatal(err)
+	}
+
 	// A second handle to the same shared-cache DB, playing the role of
 	// whatsmeowDB. LID lookups hit the same underlying tables.
 	waDB, err := sql.Open("sqlite3", dsn)

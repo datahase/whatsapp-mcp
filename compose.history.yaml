@@ -1,0 +1,18 @@
+# Optional local history runtime, on the same host and in the same app container.
+# Pull the optional published image or build locally as documented in docs/HISTORY.md.
+services:
+  whatsapp-mcp:
+    image: ${WHATSAPP_MCP_HISTORY_IMAGE:-datahase/whatsapp-mcp:0.6.0-history}
+    build:
+      context: .
+      dockerfile: Dockerfile.history
+      args:
+        CORE_IMAGE: ${WHATSAPP_MCP_CORE_IMAGE:-datahase/whatsapp-mcp:0.6.0}
+    mem_limit: ${HISTORY_MEM_LIMIT:-4g}
+    cpus: ${HISTORY_CPUS:-2.0}
+    environment:
+      HISTORY_ENABLED: "true"
+      HISTORY_PYTHON: /opt/history/bin/python
+      HISTORY_MODEL_CACHE: /data/models/embeddinggemma-2
+      HISTORY_ALLOW_GENERATION: ${HISTORY_ALLOW_GENERATION:-false}
+      HISTORY_OFFLINE: ${HISTORY_OFFLINE:-false}

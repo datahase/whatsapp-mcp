@@ -53,9 +53,12 @@ type Message struct {
 	// WhatsApp media protobuf at receive/send time. When present, the
 	// download path uses it directly; when absent (legacy row written by
 	// an older daemon build), Download falls back to parsing URL.
-	DirectPath  string `json:"direct_path,omitempty"`
-	ChatName    string `json:"chat_name,omitempty"`
-	PhoneNumber string `json:"phone_number,omitempty"`
+	DirectPath   string `json:"direct_path,omitempty"`
+	ReplyID      string `json:"reply_id,omitempty"`
+	ReplyChatJID string `json:"reply_chat_jid,omitempty"`
+	Deleted      bool   `json:"deleted,omitempty"`
+	ChatName     string `json:"chat_name,omitempty"`
+	PhoneNumber  string `json:"phone_number,omitempty"`
 }
 
 // Chat is a cached WhatsApp chat.
@@ -118,6 +121,10 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := InstallHistoryTriggers(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("history schema: %w", err)
+	}
 	// Tighten messages.db after schema has been applied (the file exists
 	// by then). IsNotExist-tolerate in case a future sqlite driver version
 	// defers file creation.
@@ -178,11 +185,18 @@ func (s *Store) StoreMessage(ctx context.Context, m Message, mediaKey, fileSHA25
 		return ErrCacheFull
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO messages
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, direct_path, media_key, file_sha256, file_enc_sha256, file_length)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO messages
+		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, direct_path, media_key, file_sha256, file_enc_sha256, file_length, reply_id, reply_chat_jid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id,chat_jid) DO UPDATE SET sender=excluded.sender, content=excluded.content, timestamp=excluded.timestamp,
+		is_from_me=excluded.is_from_me, media_type=excluded.media_type, filename=excluded.filename, url=excluded.url,
+		direct_path=excluded.direct_path, media_key=excluded.media_key, file_sha256=excluded.file_sha256,
+		file_enc_sha256=excluded.file_enc_sha256, file_length=excluded.file_length,reply_id=excluded.reply_id,reply_chat_jid=excluded.reply_chat_jid
+		WHERE messages.deleted=0 AND (messages.content IS NOT excluded.content OR messages.sender IS NOT excluded.sender OR
+		messages.timestamp IS NOT excluded.timestamp OR messages.media_type IS NOT excluded.media_type OR messages.reply_id IS NOT excluded.reply_id OR
+		messages.url IS NOT excluded.url OR messages.direct_path IS NOT excluded.direct_path OR messages.file_sha256 IS NOT excluded.file_sha256 OR messages.is_from_me IS NOT excluded.is_from_me OR messages.filename IS NOT excluded.filename OR messages.reply_chat_jid IS NOT excluded.reply_chat_jid OR messages.file_length IS NOT excluded.file_length OR messages.file_enc_sha256 IS NOT excluded.file_enc_sha256 OR messages.media_key IS NOT excluded.media_key)`,
 		m.ID, m.ChatJID, m.Sender, m.Content, m.Timestamp, m.IsFromMe,
-		m.MediaType, m.Filename, m.URL, m.DirectPath, mediaKey, fileSHA256, fileEncSHA256, fileLength,
+		m.MediaType, m.Filename, m.URL, m.DirectPath, mediaKey, fileSHA256, fileEncSHA256, fileLength, m.ReplyID, m.ReplyChatJID,
 	)
 	return err
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/datahase/whatsapp-mcp/internal/authflow"
 	"github.com/datahase/whatsapp-mcp/internal/client"
 	"github.com/datahase/whatsapp-mcp/internal/config"
+	"github.com/datahase/whatsapp-mcp/internal/history"
 	"github.com/datahase/whatsapp-mcp/internal/httpapi"
 	mcpsrv "github.com/datahase/whatsapp-mcp/internal/mcp"
 	"github.com/datahase/whatsapp-mcp/internal/security"
@@ -186,9 +187,11 @@ func runServe(args []string) int {
 		public, _ := url.Parse(cfg.PublicURL)
 		cfg.AllowedHosts = append(cfg.AllowedHosts, public.Hostname())
 	}
-	m := mcpsrv.NewServer(mgr, gem, cfg.Limits.MaxInlineBytes)
+	hist := history.New(cfg.History, mgr, gem, filepath.Join(cfg.DataDir, "service", "history-runtime"))
+	defer hist.Close()
+	m := mcpsrv.NewServer(mgr, gem, cfg.Limits.MaxInlineBytes).WithHistory(hist)
 	h := httpapi.New(httpapi.Config{OAuth: oauth, OAuthOnly: cfg.OAuthOnly, Token: cfg.Auth.Token, AdminPassword: cfg.Auth.AdminPassword, AllowedHosts: cfg.AllowedHosts,
-		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), AI: gem, Version: Version, Log: log, DataDir: cfg.DataDir})
+		MaxUpload: cfg.Limits.MaxMediaBytes, Manager: mgr, MCP: m.Handler(), AI: gem, History: hist, Version: Version, Log: log, DataDir: cfg.DataDir})
 	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Minute,
 		IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
 

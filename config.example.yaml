@@ -63,3 +63,18 @@ ai:
   max_output_tokens: 4096
   request_timeout: 120s
   wait_for_result: 45s
+
+# Optional local history retrieval. Configure accounts/chats in the admin UI.
+# This does not restrict the existing WhatsApp tools.
+history:
+  enabled: false
+  allow_generation: false
+  model: google/embeddinggemma-2
+  revision: f9972ac22e696a105c482202646979e33e4b5a1e
+  dimensions: 256
+  runtime: sentence_transformers
+  python: python3
+  device: cpu
+  offline: false
+  max_documents: 100000
+  retention_days: 7

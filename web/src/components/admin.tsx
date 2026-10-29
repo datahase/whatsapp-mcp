@@ -38,6 +38,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import HistoryPanel, { HistoryOnboarding } from "@/components/history";
+
 type Account = {
   account_id: string;
   label: string;
@@ -62,7 +64,7 @@ type Pairing = {
   pair_code: string;
   t: number;
 };
-type View = "accounts" | "connect";
+type View = "accounts" | "connect" | "history";
 const labels: Record<string, string> = {
   unpaired: "Not linked",
   pairing: "Waiting for phone",
@@ -345,8 +347,8 @@ function Login({ onLogin }: { onLogin: () => Promise<void> }) {
               Get a sign-in code
             </div>
             <p className="subtext mt-2 text-xs">
-              Run this from any folder on the Docker host. The code works
-              once and expires in 10 minutes.
+              Run this from any folder on the Docker host. The code works once
+              and expires in 10 minutes.
             </p>
             <CodeBlock text={loginCommand} />
           </div>
@@ -387,6 +389,10 @@ export default function Admin() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     if (location.hash === "#connect") setView("connect");
+    if (location.hash === "#history") {
+      setView("history");
+      setSelected(new URLSearchParams(location.search).get("history_account"));
+    }
     const match = location.pathname.match(/^\/admin\/accounts\/([^/]+)$/);
     if (match) setSelected(match[1]);
     const timer = setInterval(() => {
@@ -401,9 +407,14 @@ export default function Admin() {
     history.replaceState(
       {},
       "",
-      account
+      account && next === "accounts"
         ? "/admin/accounts/" + account
-        : "/admin" + (next === "connect" ? "#connect" : ""),
+        : "/admin" +
+            (next === "connect"
+              ? "#connect"
+              : next === "history"
+                ? "#history"
+                : ""),
     );
   }
   async function addAccount() {
@@ -476,6 +487,13 @@ export default function Admin() {
             Connect client
           </button>
         </nav>
+        <button
+          className={`navitem ${view === "history" ? "active" : ""}`}
+          onClick={() => navigate("history")}
+        >
+          <Monitor size={17} />
+          WhatsApp history
+        </button>
         <div className="railfooter">
           <div className="flex items-center gap-2 mb-2">
             <span
@@ -523,21 +541,43 @@ export default function Admin() {
           )}
           {authorizationId ? (
             <Consent id={authorizationId} session={session} />
+          ) : view === "history" ? (
+            <HistoryPanel
+              accounts={session.accounts}
+              csrf={session.csrf}
+              initialAccount={selected}
+            />
           ) : view === "connect" ? (
             <Connect session={session} />
           ) : account ? (
-            <AccountDetail
-              key={account.account_id}
-              account={account}
-              csrf={session.csrf}
-              refresh={loadSession}
-              back={() => navigate("accounts")}
-              expired={() => {
-                setSession(null);
-              }}
-            />
+            <>
+              <HistoryOnboarding
+                account={account}
+                csrf={session.csrf}
+                open={() => navigate("history", account.account_id)}
+              />
+              <AccountDetail
+                key={account.account_id}
+                account={account}
+                csrf={session.csrf}
+                refresh={loadSession}
+                back={() => navigate("accounts")}
+                expired={() => {
+                  setSession(null);
+                }}
+              />
+            </>
           ) : (
             <>
+              {session.accounts.find((a) => a.state === "connected") && (
+                <HistoryOnboarding
+                  account={
+                    session.accounts.find((a) => a.state === "connected")!
+                  }
+                  csrf={session.csrf}
+                  open={() => navigate("history")}
+                />
+              )}
               <div className="flex items-start justify-between gap-5 mb-8">
                 <div>
                   <h1>Accounts</h1>

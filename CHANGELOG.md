@@ -3,7 +3,23 @@
 All notable changes are recorded here. Versions follow semantic versioning;
 before 1.0, minor versions may contain breaking changes.
 
-## [Unreleased]
+## [0.6.0] - 2026-10-29
+
+### Added
+- Optional local WhatsApp-history search with pinned EmbeddingGemma 2, scoped
+  incremental SQLite vector/keyword indexes, resumable jobs and source context.
+- Scoped conversational sessions, cited provider answers with separate external
+  consent, and exhaustive chronological action-review workflows.
+- Post-link monitoring prompt and history selection/progress/source-inspection
+  UI. Monitoring selection leaves existing WhatsApp tool permissions unchanged.
+- Optional CPU runtime image and reproducible synthetic verification.
+
+### Fixed
+- Preserve reply references and deletion tombstones during cache ingestion.
+- Prevent a cancelled old index from pausing a newly selected scope, clear queued
+  authorization on scope/session deletion, and enforce one-time login-code claims.
+- Invalidate history derivatives transactionally after source changes, and avoid
+  redispatching possibly billed history generation after a restart.
 
 ## [0.5.0] - 2026-10-29
 

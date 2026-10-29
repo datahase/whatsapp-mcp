@@ -29,6 +29,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.version }}
+      - id: source
+        name: Resolve the tagged source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - if: env.HAS_DOCKERHUB == 'true'
@@ -64,7 +67,36 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ env.VERSION }}
-            REVISION=${{ github.sha }}
+            REVISION=${{ steps.source.outputs.revision }}
+          sbom: true
+          provenance: mode=max
+      - id: history-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            name=docker.io/datahase/whatsapp-mcp,enable=${{ env.HAS_DOCKERHUB == 'true' }}
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.VERSION }},suffix=-history
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.VERSION }},suffix=-history
+            type=raw,value=history
+          flavor: latest=false
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.revision }}
+            org.opencontainers.image.description=Optional local CPU history embedding runtime; model weights are downloaded separately
+      - id: history
+        name: Publish optional local history runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.history
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.history-meta.outputs.tags }}
+          labels: ${{ steps.history-meta.outputs.labels }}
+          build-args: |
+            CORE_IMAGE=ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
           sbom: true
           provenance: mode=max
       - uses: actions/attest-build-provenance@v2
@@ -72,15 +104,22 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.history.outputs.digest }}
+          push-to-registry: true
       - name: Release notes with digest
         run: |
           printf 'docker.io/datahase/whatsapp-mcp@%s\nghcr.io/${{ github.repository }}@%s\n' "${{ steps.build.outputs.digest }}" "${{ steps.build.outputs.digest }}" > image-digest.txt
-          sha256sum image-digest.txt THIRD_PARTY_LICENSES.txt > SHA256SUMS
+          printf 'docker.io/datahase/whatsapp-mcp@%s\nghcr.io/${{ github.repository }}@%s\n' "${{ steps.history.outputs.digest }}" "${{ steps.history.outputs.digest }}" > history-image-digest.txt
+          sha256sum image-digest.txt history-image-digest.txt THIRD_PARTY_LICENSES.txt > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
           draft: true
           files: |
             image-digest.txt
+            history-image-digest.txt
             SHA256SUMS
             THIRD_PARTY_LICENSES.txt

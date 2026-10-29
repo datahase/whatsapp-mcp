@@ -30,6 +30,7 @@ type Config struct {
 	Accounts     []Account `yaml:"accounts"`
 	Limits       Limits    `yaml:"limits"`
 	AI           AI        `yaml:"ai"`
+	History      History   `yaml:"history"`
 	// LegacyGemini accepts the 0.1.0 `gemini:` section.
 	LegacyGemini *AI    `yaml:"gemini"`
 	LogLevel     string `yaml:"log_level"`
@@ -187,6 +188,9 @@ func setStr(dst *string, keys ...string) {
 // applyEnv lets every commonly changed setting come from the environment,
 // which overrides the YAML file. Empty variables are treated as unset.
 func (c *Config) applyEnv() error {
+	if err := c.History.loadEnv(); err != nil {
+		return err
+	}
 	if v, ok := env("WHATSAPP_MCP_PUBLIC_URL"); ok {
 		c.PublicURL = v
 	}
@@ -276,6 +280,7 @@ func splitList(v string) []string {
 }
 
 func (c *Config) applyDefaults() {
+	c.History.defaults()
 	def := func(v *string, d string) {
 		if *v == "" {
 			*v = d
@@ -468,6 +473,9 @@ func (c *Config) resolveSecrets() error {
 // Validate reports every configuration problem at once.
 func (c *Config) Validate() error {
 	var errs []error
+	if err := c.History.validate(); err != nil {
+		errs = append(errs, err)
+	}
 	if c.OAuthOnly && c.PublicURL == "" {
 		errs = append(errs, errors.New("oauth_only requires public_url"))
 	}
