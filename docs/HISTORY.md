@@ -5,7 +5,7 @@ Prepare conversations once, then search their meaning, inspect the original mess
 ## Connect and choose conversations
 
 1. Connect WhatsApp in **Accounts** using the existing QR flow.
-2. The connected account offers **Index all available chats**, **Choose chats and accounts**, or **Not now**.
+2. The connected account offers **Use all conversations**, **Choose conversations**, or **Not now**.
 3. In **History**, choose the account, then all chats or specific conversations. Each account has its own selection (up to 1000 monitored chats). All-chats mode also monitors future chats received by the cache. If it grows past 1000 chats, narrow the selection before indexing or querying the whole scope.
 4. Watch indexing progress. New messages, edits and completed transcripts update the index automatically. Cancel pauses automatic indexing; **Start indexing** resumes it.
 5. Search locally, inspect a result's sources, or create a session for questions and chronological action review.
@@ -199,7 +199,7 @@ Use **Search conversations** to filter cached chat names or numbers. Named chats
 appear before identifier-only entries. Filtering does not change your selected
 conversations. Names depend on the contacts and group metadata WhatsApp has synced.
 
-**Resume indexing** retries local indexing from its durable pending-message queue.
+**Try again** (when preparation stops) or **Check for updates** retries local indexing from its durable pending-message queue.
 Completed embeddings remain available. Media links are indexed as text and never
 downloaded by the embedding worker. Existing media-cache and missing-transcript
 warnings describe coverage, not an instruction to download or transcribe media.
@@ -209,3 +209,9 @@ The text-only input wrapper follows the [Sentence Transformers input format](htt
 Run `python3 scripts/history/test-worker.py` for the dependency-free protocol
 regression, `node --experimental-strip-types --test web/src/lib/history-chats.test.mjs`
 for picker checks, and the optional real-model test above for live local embeddings.
+
+The admin page starts with conversation selection on first use. Once configured,
+conversation choices collapse and **Find messages** becomes the everyday action.
+**What is included?** explains missing history and voice transcripts; runtime
+counts and detailed warnings are under **Technical details**. Previous question
+sessions and sender/date filters remain available without crowding the search form.

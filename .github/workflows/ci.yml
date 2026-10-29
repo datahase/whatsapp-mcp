@@ -32,7 +32,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Chat picker regression tests
-        run: node --experimental-strip-types --test web/src/lib/history-chats.test.mjs
+        run: node --experimental-strip-types --test web/src/lib/history-*.test.mjs
       - name: Build static admin frontend
         run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
       - uses: actions/setup-go@v5

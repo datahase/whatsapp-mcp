@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { countLabel, formatHistoryDate, historyTranslationText } from "@/lib/history-display";
 import { filterChats } from "@/lib/history-chats";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -148,13 +149,12 @@ export function HistoryOnboarding({
     >
       <h2>Chat with your WhatsApp history</h2>
       <p className="subtext mt-2">
-        Prepare searchable history for this account. Choose all available chats
-        or specific conversations. This controls local monitoring only. Your
-        assistant&apos;s existing access to other conversations stays the same.
+        Choose conversations to make their messages searchable. Include all
+        conversations or just the ones you need.
       </p>
       <p className="subtext mt-2 text-sm">
-        WhatsApp may sync only part of your history. Voice notes are searchable
-        after you explicitly transcribe them.
+        WhatsApp may share only some older messages. Voice notes need a
+        transcript before their spoken content can be searched.
       </p>
       {error && <p role="alert">{error}</p>}
       <div className="flex flex-wrap gap-2 mt-4">
@@ -173,12 +173,12 @@ export function HistoryOnboarding({
             }
           }}
         >
-          Index all available chats
+          Use all conversations
         </Button>
         <Button variant="outline" onClick={open}>
           {enabled
-            ? "Choose chats and accounts"
-            : "Set up local history search"}
+            ? "Choose conversations"
+            : "Set up history search"}
         </Button>
         <Button
           variant="ghost"
@@ -227,6 +227,7 @@ export default function HistoryPanel({
   const [sender, setSender] = useState("");
   const [after, setAfter] = useState("");
   const [before, setBefore] = useState("");
+  const [searched, setSearched] = useState(false);
   const [hits, setHits] = useState<{ source: Source; context: Source[] }[]>([]);
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [review, setReview] = useState<{
@@ -237,6 +238,7 @@ export default function HistoryPanel({
   const [inspected, setInspected] = useState<Source[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const configured = useRef("");
   const revision = useRef(0);
@@ -255,6 +257,7 @@ export default function HistoryPanel({
       configured.current = "";
       setSession("");
       setHits([]);
+      setSearched(false);
       setAnswer(null);
       setReview(null);
       setInspected(null);
@@ -264,13 +267,12 @@ export default function HistoryPanel({
     if (contentFingerprint.current && contentFingerprint.current !== content) {
       revision.current++;
       setHits([]);
+      setSearched(false);
       setAnswer(null);
       setReview(null);
       setInspected(null);
       setBusy(false);
-      setWarnings([
-        "History changed. Search or review again for current evidence.",
-      ]);
+      setNotice("New or edited messages arrived. Search again to include the latest updates.");
     }
     contentFingerprint.current = content;
     scopeFingerprint.current = fingerprint;
@@ -295,12 +297,14 @@ export default function HistoryPanel({
     setSession("");
     setConsent(false);
     setQuestion("");
+    setSearched(false);
     setHits([]);
     setAnswer(null);
     setReview(null);
     setInspected(null);
     setError("");
     setWarnings([]);
+    setNotice("");
     refresh().catch((e) => {
       if (selectedAccount.current === account) setError(e.message);
     });
@@ -347,6 +351,13 @@ export default function HistoryPanel({
   const visibleJobs = status?.jobs.filter((j, i, jobs) =>
     j.kind !== "index" || jobs.findIndex((x) => x.kind === "index") === i) || [];
   const coverage = status?.coverage;
+  const indexJob = visibleJobs.find((j) => j.kind === "index");
+  const preparing = !!indexJob && ["queued", "running"].includes(indexJob.status);
+  const needsRetry = indexJob?.status === "failed" && !!coverage?.pending_messages;
+  const paused = indexJob?.status === "cancelled" && !!coverage?.pending_messages;
+  const selectionChanged = !!status && (mode !== status.selection.mode ||
+    (mode === "selected" && [...chats].sort().join("|") !== [...status.selection.chat_ids].sort().join("|")));
+  const chatName = (jid: string) => status?.chats.find((c) => c.jid === jid)?.name || jid.split("@")[0];
   const activeScope =
     status?.sessions.find((s) => s.session_id === session)?.chat_ids ||
     status?.selection.chat_ids ||
@@ -360,7 +371,7 @@ export default function HistoryPanel({
   };
   const cite = (id: string) => (
     <button className="history-cite" key={id} onClick={() => inspect(id)}>
-      Inspect source
+      View original messages
     </button>
   );
   if (!accounts.length)
@@ -368,19 +379,18 @@ export default function HistoryPanel({
       <>
         <h1>WhatsApp history</h1>
         <p className="subtext mt-3">
-          Link an account first, then choose which conversations to monitor.
+          Link your WhatsApp account first, then choose conversations to search.
         </p>
       </>
     );
   return (
     <div className="history-page">
-      <h1>Chat with your WhatsApp history</h1>
+      <h1>Your WhatsApp history</h1>
       <p className="subtext mt-2">
-        Search locally or ask grounded questions about selected conversations.
-        Cached history is never a complete account backup.
+        Find past messages, catch up on discussions, and revisit decisions.
       </p>
-      <label className="history-field mt-6">
-        Account
+      {accounts.length > 1 ? <label className="history-field mt-6">
+        WhatsApp account
         <select value={account} onChange={(e) => setAccount(e.target.value)}>
           {accounts.map((a) => (
             <option key={a.account_id} value={a.account_id}>
@@ -388,27 +398,24 @@ export default function HistoryPanel({
             </option>
           ))}
         </select>
-      </label>
-      <p className="subtext text-xs mt-2">
-        Configure each account separately. Monitoring choices do not restrict
-        the existing WhatsApp tools.
-      </p>
+      </label> : <p className="subtext text-sm mt-3">Using {accounts[0].label}</p>}
       {error && (
         <p role="alert" className="error-note mt-4">
           {error}
         </p>
       )}
+      {notice && <p role="status" className="subtext mt-4">{notice}</p>}
       {!status ? (
         <p role="status" className="subtext mt-6">
           Loading history settings…
         </p>
       ) : !status.options.enabled ? (
         <section className="history-notice mt-6">
-          <h2>Enable the local embedding runtime</h2>
+          <h2>Set up history search</h2>
           <p className="subtext mt-2">
-            This optional feature needs the pinned EmbeddingGemma 2 runtime on
-            the server and <code>HISTORY_ENABLED=true</code>. Model weights stay
-            in the private data volume. External answers are off by default.
+            History search is not enabled on this server yet. The server owner
+            can follow the setup guide to turn it on. Your WhatsApp connection
+            keeps working.
           </p>
           <p className="subtext mt-2">
             See{" "}
@@ -417,20 +424,22 @@ export default function HistoryPanel({
               target="_blank"
               rel="noreferrer"
             >
-              local history setup
+              history search setup
             </a>
-            . Existing WhatsApp features keep working.
+            .
           </p>
         </section>
       ) : (
         <>
-          <section className="history-section">
-            <h2>Conversations to monitor</h2>
+          {!status.selection.chat_ids.length && <p className="history-intro subtext">Start by choosing the conversations you want to search below. Your messages will be prepared on this server.</p>}
+          <details className="history-section history-settings" open={!status.selection.chat_ids.length || undefined}>
+            <summary>{status.selection.chat_ids.length ? `Change conversations (${status.selection.chat_ids.length} included)` : "Choose conversations to search"}</summary>
+            <p className="subtext text-sm mt-3">Choose which conversations this server prepares for history search. You can change this later.</p>
             <div className="flex flex-wrap gap-5 mt-4">
               {[
-                ["all", "All current and future chats"],
-                ["selected", "Specific chats"],
-                ["none", "Stop monitoring"],
+                ["all", "All conversations"],
+                ["selected", "Choose conversations"],
+                ["none", "Turn off history search"],
               ].map(([value, label]) => (
                 <label className="history-check" key={value}>
                   <input
@@ -443,6 +452,7 @@ export default function HistoryPanel({
                 </label>
               ))}
             </div>
+            {mode === "all" && <p className="subtext text-sm mt-3">Includes every conversation on this account, including new ones.</p>}
             {mode === "selected" && (
               <div className="mt-4">
                 <label className="history-field">
@@ -451,9 +461,9 @@ export default function HistoryPanel({
                     value={chatSearch} onChange={(e) => setChatSearch(e.target.value)} />
                 </label>
                 <p className="subtext text-xs mt-2" role="status">
-                  {chats.length} selected · {visibleChats.length} of {status.chats.length} shown. Named chats appear first.
+                  {chats.length} selected · {countLabel(visibleChats.length, "conversation")} shown
                 </p>
-                <div className="history-chat-list mt-3">
+                <div className="history-chat-list mt-3" aria-label="Choose conversations">
                 {visibleChats.length ? (
                   visibleChats.map((c) => (
                     <label key={c.jid} className="history-check">
@@ -468,7 +478,7 @@ export default function HistoryPanel({
                           )
                         }
                       />
-                      {c.name || c.jid}
+                      <span className="history-chat-name">{c.name || c.jid.split("@")[0]}</span>
                     </label>
                   ))
                 ) : (
@@ -481,7 +491,7 @@ export default function HistoryPanel({
             )}
             <div className="flex gap-2 mt-4">
               <Button
-                disabled={busy || (mode === "selected" && !chats.length)}
+                disabled={busy || (mode === "selected" && !chats.length) || (!selectionChanged && !!status.selection.chat_ids.length)}
                 onClick={async () => {
                   const v = await perform("selection", {
                     mode,
@@ -491,152 +501,72 @@ export default function HistoryPanel({
                     setSession("");
                     setAnswer(null);
                     setHits([]);
+      setSearched(false);
                     setReview(null);
                     configured.current = "";
+                    contentFingerprint.current = "";
+                    scopeFingerprint.current = "";
+                    setWarnings([]);
+                    setNotice("");
                     await refresh();
                   }
                 }}
               >
-                {mode === "none"
-                  ? "Stop and remove history artifacts"
-                  : "Save and start local indexing"}
+                {busy ? "Saving…" : mode === "none" ? "Turn off history search" : "Save conversations"}
               </Button>
             </div>
+            {selectionChanged && <p className="subtext text-sm mt-3" role="status">Save your choices to use them for future searches.</p>}
             <p className="subtext text-xs mt-3">
-              Stopping removes vectors, history sessions and derived history
-              answers. Original cached messages, transcripts, exports and media
-              remain available through existing tools.
+              {mode === "none" ? "Turning this off removes the search index and saved question sessions. Original messages, transcripts and media stay on the server." : "New messages in these conversations will be prepared automatically. Your assistant's access to other conversations stays the same."}
             </p>
-          </section>
+          </details>
           {coverage && (
-            <section className="history-section">
-              <h2>Coverage and indexing</h2>
-              <div className="history-metrics mt-4">
-                <span>
-                  <strong>{coverage.cached_messages}</strong> cached messages
-                </span>
-                <span>
-                  <strong>{coverage.indexed_documents}</strong> indexed chunks
-                </span>
-                <span>
-                  <strong>{coverage.pending_messages}</strong> waiting
-                </span>
-                <span>
-                  <strong>{coverage.missing_transcripts}</strong> audio without
-                  transcripts
-                </span>
-                <span>
-                  <strong>{coverage.media_not_cached}</strong> media not cached
-                </span>
+            <section className="history-preparation">
+              <div className="history-preparation-main">
+                <div>
+                  <h2>{needsRetry ? "Message preparation stopped" : paused ? "Preparation paused" : !coverage.indexed_documents && !coverage.pending_messages ? "No searchable text yet" : preparing ? "Preparing your messages" : coverage.pending_messages ? "More messages to prepare" : "Ready to search"}</h2>
+                  <p className="subtext text-sm mt-2" role="status">
+                    {needsRetry ? "Try again to continue where it stopped. Your saved messages are safe." : paused ? "Continue whenever you are ready. Prepared messages are still searchable." : !coverage.indexed_documents && !coverage.pending_messages ? "These conversations have no searchable text yet. Voice notes need a transcript first." : preparing ? `${countLabel(coverage.pending_messages, "message")} left to check. You can leave this page while we work.` : coverage.pending_messages ? `${countLabel(coverage.pending_messages, "message")} waiting to be prepared.` : "Available text in your chosen conversations is searchable."}
+                  </p>
+                  {coverage.pending_messages > 0 && coverage.indexed_documents > 0 && <p className="subtext text-sm mt-2">You can already search the messages prepared so far.</p>}
+                </div>
+                <Button variant="outline" disabled={busy || preparing}
+                  onClick={async () => { await perform("index", { chat_ids: status.selection.chat_ids, request_sync: sync }); await refresh(); }}>
+                  {preparing ? "Preparing…" : needsRetry ? "Try again" : paused ? "Continue preparation" : "Check for updates"}
+                </Button>
               </div>
-              <p className="subtext text-xs mt-3">
-                {coverage.earliest_cached || "Unknown start"} to{" "}
-                {coverage.latest_cached || "unknown end"}.{" "}
-                {coverage.failed_transcripts} failed or unresolved
-                transcriptions.
-              </p>
-              <ul className="history-warnings">
-                {coverage.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-              <label className="history-check mt-3">
-                <input
-                  type="checkbox"
-                  checked={sync}
-                  onChange={(e) => setSync(e.target.checked)}
-                />
-                Also request available older history (up to 50 messages per
-                chat)
-              </label>
-              <Button
-                className="mt-3"
-                variant="outline"
-                disabled={busy}
-                onClick={async () => {
-                  await perform("index", {
-                    chat_ids: status.selection.chat_ids,
-                    request_sync: sync,
-                  });
-                  await refresh();
-                }}
-              >
-                Resume indexing{sync ? " and request sync" : ""}
-              </Button>
-              <div className="mt-4">
-                {visibleJobs.map((j) => (
-                  <div className="history-job" key={j.job_id}>
-                    <div>
-                      <span>
-                        {j.kind === "index"
-                          ? "Local indexing"
-                          : j.kind === "actions"
-                            ? "Chronological action review"
-                            : "Grounded answer"}
-                        : {j.status}
-                      </span>
-                      <small className="subtext">
-                        {j.processed} source messages reviewed/indexed
-                      </small>
-                      {j.error && <p className="error-note">{j.error}</p>}
-                    </div>
-                    {["queued", "running"].includes(j.status) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={async () => {
-                          await perform("cancel", { job_id: j.job_id });
-                          await refresh();
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                    {j.status === "awaiting_authorization" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          await perform("resume", { job_id: j.job_id });
-                          await refresh();
-                        }}
-                      >
-                        Resume with current access
-                      </Button>
-                    )}
-                    {j.status === "completed" && j.result && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setAnswer(j.result || null);
-                          setSession(j.session_id || "");
-                          setConsent(
-                            status.sessions.find(
-                              (s) => s.session_id === j.session_id,
-                            )?.external_consent || false,
-                          );
-                        }}
-                      >
-                        View answer
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <details className="history-details mt-4">
+                <summary>What is included?</summary>
+                <p className="subtext text-sm mt-3">{coverage.cached_messages.toLocaleString()} saved messages, from {formatHistoryDate(coverage.earliest_cached, false)} to {formatHistoryDate(coverage.latest_cached, false)}. WhatsApp may provide only part of your history. This is not a full backup.</p>
+                {coverage.missing_transcripts > 0 && <p className="subtext text-sm mt-2">{coverage.missing_transcripts.toLocaleString()} voice notes do not have a transcript yet. Their spoken content will not appear in search.</p>}
+                <p className="subtext text-sm mt-2">Searching does not download attachments or transcribe voice notes. Transcription is a separate action and may cost money.</p>
+                <label className="history-check mt-4"><input type="checkbox" checked={sync} onChange={(e) => setSync(e.target.checked)} />Also ask WhatsApp for older messages (up to 50 per conversation)</label>
+                {sync && <p className="subtext text-xs mt-2">Use Check for updates or Try again above to request them. Older history is not always available.</p>}
+                <details className="history-details mt-4">
+                  <summary>Technical details</summary>
+                  <p className="subtext text-xs mt-2">{coverage.indexed_documents.toLocaleString()} searchable text sections. {coverage.media_not_cached.toLocaleString()} attachments are not saved locally. {coverage.failed_transcripts} failed or unresolved transcriptions.</p>
+                  <ul className="history-warnings">{coverage.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                  {indexJob?.error && <p className="error-note">{indexJob.error}</p>}
+                </details>
+              </details>
+              {preparing && <Button variant="ghost" size="sm" className="mt-3" onClick={async () => { await perform("cancel", { job_id: indexJob.job_id }); await refresh(); }}>Pause preparation</Button>}
             </section>
           )}
           {!!status.selection.chat_ids.length && (
             <section className="history-section">
-              <h2>Ask or search</h2>
+              <h2>Find something in your messages</h2>
+              <p className="subtext text-sm mt-2">Searching {countLabel(activeScope.length, "conversation")}{session ? " from this question session" : ""}.</p>
+              <details className="history-details mt-3">
+                <summary>View conversations or continue a question</summary>
               <label className="history-field mt-4">
-                Session
+                Continue a previous question
                 <select
                   value={session}
                   onChange={(e) => {
                     setSession(e.target.value);
                     setAnswer(null);
                     setHits([]);
+      setSearched(false);
                     setReview(null);
                     const v = status.sessions.find(
                       (s) => s.session_id === e.target.value,
@@ -645,56 +575,57 @@ export default function HistoryPanel({
                   }}
                 >
                   <option value="">
-                    New session in current selected scope
+                    Start a new question
                   </option>
-                  {status.sessions.map((s) => (
+                  {status.sessions.map((s, i) => (
                     <option value={s.session_id} key={s.session_id}>
-                      {s.session_id.slice(0, 18)} · {s.chat_ids.length} chats ·{" "}
+                      Question session {i + 1} · {countLabel(s.chat_ids.length, "conversation")} ·{" "}
                       {s.external_consent
-                        ? "external answers allowed"
-                        : "local retrieval"}
+                        ? "AI answers allowed"
+                        : "search only"}
                     </option>
                   ))}
                 </select>
               </label>
               <p className="subtext text-xs mt-2">
-                A session keeps its original account and chat scope for
-                follow-up questions. Active scope:{" "}
+                Follow-up questions use the same account and conversations. Searching:{" "}
                 {activeScope
-                  .map((c) => status.chats.find((x) => x.jid === c)?.name || c)
+                  .map(chatName)
                   .join(", ")}
                 .
               </p>
+              </details>
               <label className="history-field mt-4">
-                Mode
+                What would you like to do?
                 <select
                   value={queryMode}
                   onChange={(e) => setQueryMode(e.target.value)}
                 >
                   <option value="search">
-                    Local semantic and keyword search
+                    Find messages
                   </option>
                   <option value="review">
-                    Chronological review, no server model call
+                    Read messages in date order
                   </option>
                   <option
                     value="question"
                     disabled={!status.options.generation_enabled}
                   >
-                    Grounded answer from configured AI provider
+                    {status.options.generation_enabled ? "Ask AI a question" : "Ask AI a question (not enabled)"}
                   </option>
                   <option
                     value="actions"
                     disabled={!status.options.generation_enabled}
                   >
-                    Review all cached history for pending actions
+                    {status.options.generation_enabled ? "Ask AI to review unfinished tasks" : "Review unfinished tasks with AI (not enabled)"}
                   </option>
                 </select>
               </label>
               <p className="subtext text-xs mt-2">
-                {status.options.generation_enabled
+                {["question", "actions"].includes(queryMode)
                   ? status.options.external_generation_disclosure
-                  : "Server-side answers are disabled. Your MCP client can answer using retrieval-only tools. Enable HISTORY_ALLOW_GENERATION only if you want selected evidence sent to your configured AI provider."}
+                  : "Search runs on this server. Messages are not sent to an AI answer provider."}
+                {!status.options.generation_enabled && " AI-written answers are not enabled by the server owner."}
               </p>
               {["question", "actions"].includes(queryMode) && !session && (
                 <label className="history-check mt-3">
@@ -714,8 +645,14 @@ export default function HistoryPanel({
                   e.preventDefault();
                   setAnswer(null);
                   setHits([]);
+      setSearched(false);
                   setReview(null);
                   setWarnings([]);
+                  setNotice("");
+                  if (queryMode === "search" && after && before && new Date(after) > new Date(before)) {
+                    setError("Choose an end date after the start date.");
+                    return;
+                  }
                   if (queryMode === "search") {
                     const result = await perform<{
                       hits: typeof hits;
@@ -732,6 +669,7 @@ export default function HistoryPanel({
                         : {}),
                     });
                     if (result) {
+                      setSearched(true);
                       setHits(result.hits);
                       setWarnings(result.warnings);
                     }
@@ -754,20 +692,20 @@ export default function HistoryPanel({
                   }
                 }}
               >
-                <label className="history-field">
-                  Question
+                {queryMode !== "review" && <label className="history-field">
+                  {queryMode === "search" ? "What are you looking for?" : "Your question"}
                   <Input
                     value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
+                    onChange={(e) => { setQuestion(e.target.value); setSearched(false); }}
                     maxLength={2000}
                     placeholder="What did we decide about the launch?"
-                    required={queryMode !== "review"}
+                    required
                   />
-                </label>
+                </label>}
                 {queryMode === "search" && (
-                  <div className="history-filters mt-3">
+                  <details className="history-details mt-3"><summary>Filter by sender or date</summary><div className="history-filters mt-3">
                     <label className="history-field">
-                      Sender ID (optional)
+                      Sender number or ID (optional)
                       <Input
                         value={sender}
                         onChange={(e) => setSender(e.target.value)}
@@ -789,7 +727,7 @@ export default function HistoryPanel({
                         onChange={(e) => setBefore(e.target.value)}
                       />
                     </label>
-                  </div>
+                  </div></details>
                 )}
                 <div className="flex flex-wrap gap-2 mt-4">
                   <Button
@@ -801,10 +739,10 @@ export default function HistoryPanel({
                     {busy
                       ? "Working…"
                       : queryMode === "search"
-                        ? "Search locally"
+                        ? "Find messages"
                         : queryMode === "review"
-                          ? "Start chronological review"
-                          : "Ask with selected evidence"}
+                          ? "Read messages"
+                          : "Ask AI"}
                   </Button>
                   {session && (
                     <Button
@@ -820,24 +758,36 @@ export default function HistoryPanel({
                         await refresh();
                       }}
                     >
-                      Delete session
+                      Delete question session
                     </Button>
                   )}
                 </div>
               </form>
             </section>
           )}
+          {visibleJobs.filter((j) => j.kind !== "index").map((j) => (
+            <div className="history-job" key={j.job_id}>
+              <div><span>{j.kind === "actions" ? "Task review" : "AI answer"}: {j.status.replaceAll("_", " ")}</span>
+                <small className="subtext">{countLabel(j.processed, "message")} reviewed</small>
+                {j.error && <p className="error-note">{j.error}</p>}</div>
+              {["queued", "running"].includes(j.status) && <Button variant="ghost" size="sm" onClick={async () => { await perform("cancel", { job_id: j.job_id }); await refresh(); }}>Cancel</Button>}
+              {j.status === "awaiting_authorization" && <Button variant="outline" size="sm" onClick={async () => { await perform("resume", { job_id: j.job_id }); await refresh(); }}>Continue</Button>}
+              {j.status === "completed" && j.result && <Button variant="outline" size="sm" onClick={() => { setAnswer(j.result || null); setSession(j.session_id || ""); setConsent(status.sessions.find((x) => x.session_id === j.session_id)?.external_consent || false); }}>Read answer</Button>}
+            </div>
+          ))}
           {warnings.length > 0 && (
+            <details className="history-details mt-4"><summary>Search coverage notes</summary>
             <ul className="history-warnings">
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}
-            </ul>
+            </ul></details>
           )}
+          {searched && queryMode === "search" && <p role="status" className="subtext mt-5">{hits.length ? `${countLabel(hits.length, "matching message")} shown` : "No matching messages found. Try different words or remove a date or sender filter."}</p>}
           {hits.map((h) => (
             <article className="history-evidence" key={h.source.source_id}>
               <p className="subtext text-xs">
-                {h.source.kind} · {h.source.sender} · {h.source.timestamp}
+                {chatName(h.source.chat_jid)} · {h.source.sender} · {formatHistoryDate(h.source.timestamp)}
               </p>
               <p className="whitespace-pre-wrap mt-2">{h.source.text}</p>
               {cite(h.source.source_id)}
@@ -845,7 +795,7 @@ export default function HistoryPanel({
           ))}
           {review && (
             <section className="history-section">
-              <h2>Chronological evidence</h2>
+              <h2>Messages in date order</h2>
               <p className="subtext mt-2">
                 {review.complete_for_cached_snapshot
                   ? "Reached the end of this cached snapshot. Missing history and transcripts can still contain actions."
@@ -854,7 +804,7 @@ export default function HistoryPanel({
               {review.sources.map((s) => (
                 <article key={s.source_id} className="history-evidence">
                   <p className="subtext text-xs">
-                    {s.timestamp} · {s.sender} · {s.kind}
+                    {formatHistoryDate(s.timestamp)} · {s.sender} · {s.kind === "transcript" ? "Voice note transcript" : "Message"}
                   </p>
                   <p className="mt-2 whitespace-pre-wrap">{s.text}</p>
                   {cite(s.source_id)}
@@ -878,7 +828,7 @@ export default function HistoryPanel({
           )}
           {answer && (
             <section className="history-section">
-              <h2>Grounded findings</h2>
+              <h2>Answer and supporting messages</h2>
               <p className="subtext mt-2">{answer.answer}</p>
               {answer.review_complete_for_cached_scope && (
                 <p className="subtext mt-2">
@@ -934,17 +884,16 @@ export default function HistoryPanel({
       >
         <DialogContent className="history-source-dialog">
           <DialogHeader>
-            <DialogTitle>Source messages and context</DialogTitle>
+            <DialogTitle>Original messages</DialogTitle>
             <DialogDescription>
-              Current source text, separate translations and nearby messages in
-              the authorized chat scope.
+              Read the original text and nearby messages from your chosen conversations.
             </DialogDescription>
           </DialogHeader>
           <div className="history-source-scroll">
             {inspected?.map((s) => (
               <article className="history-evidence" key={s.source_id}>
                 <p className="subtext text-xs">
-                  {s.timestamp} · {s.sender} · {s.kind}
+                  {formatHistoryDate(s.timestamp)} · {s.sender} · {s.kind === "transcript" ? "Voice note transcript" : "Message"}
                 </p>
                 <p className="whitespace-pre-wrap mt-2">{s.text}</p>
                 {s.transcript_language && (
@@ -957,13 +906,14 @@ export default function HistoryPanel({
                     Language hint, not detected language: {s.language_hint}
                   </p>
                 )}
-                {s.translation != null && (
-                  <details className="mt-2">
-                    <summary>Separate translation</summary>
-                    <pre>{JSON.stringify(s.translation, null, 2)}</pre>
+                {historyTranslationText(s.translation) && (
+                  <details className="history-details mt-2">
+                    <summary>Read translation</summary>
+                    <p className="whitespace-pre-wrap mt-2">{historyTranslationText(s.translation)}</p>
                   </details>
                 )}
-                <p className="subtext text-xs mt-3">
+                <details className="history-details mt-3"><summary>Message reference</summary>
+                <p className="subtext text-xs mt-2">
                   Chat: {s.chat_jid}
                   <br />
                   Message: {s.message_id}
@@ -973,7 +923,7 @@ export default function HistoryPanel({
                       Reply to: {s.reply_id}
                     </>
                   )}
-                </p>
+                </p></details>
               </article>
             ))}
           </div>

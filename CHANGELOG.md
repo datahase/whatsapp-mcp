@@ -12,6 +12,9 @@ before 1.0, minor versions may contain breaking changes.
   progress, and show the current indexing attempt rather than stale failures.
 
 ### Added
+- Simplify history setup, preparation/retry states, search, follow-up sessions and
+  source inspection for everyday users. Keep coverage and technical details
+  available on demand, with readable dates and clear empty states.
 - Search the history chat picker by name or number, with named chats first and
   selection counts that remain stable while filtering.
 - Synthetic URL-input regression coverage for document, search and question
