@@ -2,12 +2,12 @@
 # Pull the optional published image or build locally as documented in docs/HISTORY.md.
 services:
   whatsapp-mcp:
-    image: ${WHATSAPP_MCP_HISTORY_IMAGE:-datahase/whatsapp-mcp:0.6.2-history}
+    image: ${WHATSAPP_MCP_HISTORY_IMAGE:-datahase/whatsapp-mcp:0.6.3-history}
     build:
       context: .
       dockerfile: Dockerfile.history
       args:
-        CORE_IMAGE: ${WHATSAPP_MCP_CORE_IMAGE:-datahase/whatsapp-mcp:0.6.2}
+        CORE_IMAGE: ${WHATSAPP_MCP_CORE_IMAGE:-datahase/whatsapp-mcp:0.6.3}
     mem_limit: ${HISTORY_MEM_LIMIT:-4g}
     cpus: ${HISTORY_CPUS:-2.0}
     environment:

@@ -3,6 +3,13 @@
 All notable changes are recorded here. Versions follow semantic versioning;
 before 1.0, minor versions may contain breaking changes.
 
+## [0.6.3] - 2026-10-29
+
+### Fixed
+- Keep active history preparation visible ahead of cancelled attempts. Resumed
+  jobs retain their creation time, so order progress by active state and latest
+  update rather than creation time alone.
+
 ## [0.6.2] - 2026-10-29
 
 ### Fixed

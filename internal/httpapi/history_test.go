@@ -127,4 +127,45 @@ func TestHistoryHTTPAndMCPBoundaries(t *testing.T) {
 	if !isErr || !strings.Contains(text, "consent") {
 		t.Fatal("generation bypassed opt-in")
 	}
+	// A resumed job keeps its original creation time. It must stay visible
+	// ahead of a newer cancelled attempt, including after it completes.
+	hist.Close()
+	a, _ := mgr.Get("alpha")
+	st, _ := a.Store()
+	now := time.Now().Unix()
+	raw := `{"scope":{"account_id":"alpha","chat_ids":["chosen@g.us"]}}`
+	for _, row := range []struct {
+		id, status       string
+		created, updated int64
+	}{
+		{"older-active", "running", now - 200, now},
+		{"newer-cancelled", "cancelled", now - 100, now - 1},
+	} {
+		if _, err := st.DB().Exec("INSERT INTO history_jobs(id,kind,status,request_json,created,updated) VALUES(?,'index',?,?,?,?)", row.id, row.status, raw, row.created, row.updated); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertLatest := func(want string) {
+		t.Helper()
+		r, err := client.Get(srv.URL + "/admin/api/history/alpha/status")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		var v struct {
+			Jobs []history.Job `json:"jobs"`
+		}
+		if err = json.NewDecoder(r.Body).Decode(&v); err != nil {
+			t.Fatal(err)
+		}
+		if len(v.Jobs) == 0 || v.Jobs[0].ID != want {
+			t.Fatalf("current job hidden by stale attempts: %+v", v.Jobs)
+		}
+	}
+	assertLatest("older-active")
+	if _, err := st.DB().Exec("UPDATE history_jobs SET status='completed',updated=? WHERE id='older-active'", now+1); err != nil {
+		t.Fatal(err)
+	}
+	assertLatest("older-active")
+
 }

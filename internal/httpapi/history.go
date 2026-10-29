@@ -48,7 +48,7 @@ func (s *Server) historyStatus(w http.ResponseWriter, r *http.Request, _ *sessio
 				out["coverage"] = cov
 			}
 		}
-		rows, e := st.DB().QueryContext(r.Context(), "SELECT id FROM history_jobs ORDER BY created DESC,id DESC LIMIT 8")
+		rows, e := st.DB().QueryContext(r.Context(), "SELECT id FROM history_jobs ORDER BY CASE WHEN status IN ('queued','running') THEN 0 ELSE 1 END,updated DESC,created DESC,id DESC LIMIT 8")
 		ids := []string{}
 		if e == nil {
 			for rows.Next() {
