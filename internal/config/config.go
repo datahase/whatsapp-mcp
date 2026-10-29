@@ -68,7 +68,7 @@ type Limits struct {
 
 // AI configures optional analysis. Provider handles translation and image
 // analysis; TranscribeProvider handles transcription (default: the same
-// provider). Supported: gemini, openai, groq, openrouter, anthropic (no
+// provider). Supported: gemini, openai, groq, openrouter, vercel, anthropic (no
 // audio) and openai_compatible (any other OpenAI-shaped API). The API keys
 // are the ones used for personal media; the test key is only used by the
 // fixture smoke command.
@@ -111,6 +111,7 @@ var presets = map[string]preset{
 	"openai":            {"https://api.openai.com/v1", "gpt-4o-transcribe", "", "", "audio_transcriptions", "OPENAI_API_KEY"},
 	"groq":              {"https://api.groq.com/openai/v1", "whisper-large-v3", "", "", "audio_transcriptions", "GROQ_API_KEY"},
 	"openrouter":        {"https://openrouter.ai/api/v1", "", "", "", "chat", "OPENROUTER_API_KEY"},
+	"vercel":            {"https://ai-gateway.vercel.sh/v1", "google/gemini-3.5-transcribe", "google/gemini-3.5-flash-lite", "google/gemini-3.8-flash", "native", "AI_GATEWAY_API_KEY"},
 	"anthropic":         {"https://api.anthropic.com", "", "claude-opus-5-5", "", "none", "ANTHROPIC_API_KEY"},
 	"openai_compatible": {"", "", "", "", "chat", "AI_API_KEY"},
 	// Speech-to-text only (AI_TRANSCRIBE_PROVIDER).
@@ -123,10 +124,10 @@ var presets = map[string]preset{
 var transcribeOnly = map[string]bool{"deepgram": true, "elevenlabs": true, "assemblyai": true}
 
 // ProviderNames lists supported providers (for messages).
-const ProviderNames = "gemini, openai, groq, openrouter, anthropic or openai_compatible"
+const ProviderNames = "gemini, openai, groq, openrouter, vercel, anthropic or openai_compatible"
 
 // TranscribeProviderNames lists providers that can transcribe.
-const TranscribeProviderNames = "gemini, openai, groq, openrouter, openai_compatible, deepgram, elevenlabs or assemblyai"
+const TranscribeProviderNames = "gemini, openai, groq, openrouter, vercel, openai_compatible, deepgram, elevenlabs or assemblyai"
 
 var accountIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 var phoneRe = regexp.MustCompile(`^[0-9]{6,15}$`)
@@ -516,6 +517,15 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("AI_AUDIO_FORMAT %q: use original or wav", a.AudioFormat))
 	}
 	if a.Enabled {
+		for _, model := range []struct{ provider, name, setting string }{
+			{a.Provider, a.AnalysisModel, "AI_MODEL"},
+			{a.Provider, a.QualityModel, "AI_QUALITY_MODEL"},
+			{a.TranscribeProvider, a.TranscribeModel, "AI_TRANSCRIBE_MODEL"},
+		} {
+			if model.provider == "vercel" && model.name != "" && !strings.Contains(model.name, "/") {
+				errs = append(errs, fmt.Errorf("%s: Vercel AI Gateway requires a provider/model ID from its model catalog", model.setting))
+			}
+		}
 		if a.Provider == "openai_compatible" && a.BaseURL == "" {
 			errs = append(errs, errors.New("AI_BASE_URL is required for provider openai_compatible"))
 		}

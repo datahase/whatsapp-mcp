@@ -44,7 +44,7 @@ limits:
 # uses api key below/AI_API_KEY; there is no fallback to a free tier.
 ai:
   enabled: false
-  provider: gemini            # gemini | openai | groq | openrouter | anthropic | openai_compatible
+  provider: gemini            # gemini | openai | groq | openrouter | vercel | anthropic | openai_compatible
   # transcribe_provider: deepgram   # default: same as provider; also deepgram | elevenlabs | assemblyai
   # base_url: ""              # per-provider default; required for openai_compatible
   # transcribe_base_url: ""

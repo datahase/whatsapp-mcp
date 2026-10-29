@@ -151,24 +151,24 @@ docker pull datahase/whatsapp-mcp:latest
 For a fixed release, or to pull from GHCR instead:
 
 ```sh
-docker pull datahase/whatsapp-mcp:0.4.1
-docker pull ghcr.io/datahase/whatsapp-mcp:0.4.1
+docker pull datahase/whatsapp-mcp:0.5.0
+docker pull ghcr.io/datahase/whatsapp-mcp:0.5.0
 ```
 
-Both registries publish `0.4.1`, `0.4`, and `latest`, with `linux/amd64` and
+Both registries publish `0.5.0`, `0.5`, and `latest`, with `linux/amd64` and
 `linux/arm64` variants. Docker selects the variant for your host. To pin the
 image or use GHCR, set one of these in `.env`:
 
 ```sh
-WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.4.1
-# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.4.1
+WHATSAPP_MCP_IMAGE=datahase/whatsapp-mcp:0.5.0
+# Or: WHATSAPP_MCP_IMAGE=ghcr.io/datahase/whatsapp-mcp:0.5.0
 ```
 
 Pulling an image downloads it. `whatsapp-mcp setup` provides configuration and persistent storage.
 To deploy a specific image from any folder:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.4.1 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.5.0 --yes
 ```
 
 To build from source instead, clone this repository, run
@@ -234,7 +234,9 @@ If multiple instances exist, select one with
 
 Messaging works without an AI key. To enable voice-note transcription,
 translation, or image analysis, follow the [AI setup guide](docs/AI.md).
-Gemini is the default provider; other built-in providers are listed there.
+Gemini is the default provider. Vercel AI Gateway keys are also supported for
+Gemini transcription; see [Gateway setup](docs/AI.md#vercel-ai-gateway-with-gemini).
+Other built-in providers are listed in the AI guide.
 Use paid provider access for personal media. Analysis runs only when requested.
 
 ## Updates and backups
@@ -243,7 +245,7 @@ Follow the [backup and update guide](docs/OPERATIONS.md) before upgrading.
 From any folder, choose the new release image:
 
 ```sh
-whatsapp-mcp setup --image datahase/whatsapp-mcp:0.4.1 --yes
+whatsapp-mcp setup --image datahase/whatsapp-mcp:0.5.0 --yes
 ```
 
 Setup backs up the existing `.env`, validates configuration, and waits for

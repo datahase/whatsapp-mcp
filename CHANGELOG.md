@@ -5,6 +5,17 @@ before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-29
+
+### Added
+- Vercel AI Gateway provider (`vercel`) with `AI_GATEWAY_API_KEY` and `_FILE`
+  support, independently selectable for transcription or all AI features.
+- Native Gateway recorded-audio transcription using Gemini, with original
+  Ogg/Opus input and the versioned REST protocol. Translation and images use
+  Gateway's OpenAI-compatible endpoint.
+- Configuration, authentication, audio serialization and provider-error tests,
+  plus Gateway setup and quota documentation.
+
 ## [0.4.1] - 2026-10-28
 
 ### Fixed

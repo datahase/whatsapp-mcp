@@ -39,6 +39,7 @@ const (
 	ProviderOpenAI           = "openai"
 	ProviderGroq             = "groq"
 	ProviderOpenRouter       = "openrouter"
+	ProviderVercel           = "vercel"
 	ProviderAnthropic        = "anthropic"
 	ProviderOpenAICompatible = "openai_compatible"
 )
@@ -308,6 +309,9 @@ func newProvider(kind, base, key, method string, timeout time.Duration, onCleanu
 	case ProviderAnthropic:
 		c := NewAnthropicClient(base, key, timeout)
 		return &anthropicProvider{c: c}, c, nil
+	case ProviderVercel:
+		c := NewOpenAIClient(base, key, timeout)
+		return &gatewayProvider{openAIProvider: &openAIProvider{c: c}}, c, nil
 	case ProviderDeepgram:
 		c := withAuth(base, key, "Authorization", "Token ", timeout)
 		return &deepgramProvider{c: c}, c, nil

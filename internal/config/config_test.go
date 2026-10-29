@@ -148,6 +148,42 @@ func TestProviderPresetsAndKeys(t *testing.T) {
 	}
 }
 
+func TestVercelGatewayKeysAndSeparateTranscription(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_PROVIDER", "vercel")
+	t.Setenv("AI_GATEWAY_API_KEY", "gateway-0123456789abcdef")
+	c, err := Load(missing(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := c.AI; a.BaseURL != "https://ai-gateway.vercel.sh/v1" || a.TranscribeProvider != "vercel" ||
+		a.TranscribeModel != "google/gemini-3.5-transcribe" || a.TranscribeMethod != "native" ||
+		a.AudioFormat != "original" || a.APIKey != "gateway-0123456789abcdef" || a.TranscribeAPIKey != a.APIKey {
+		t.Fatal("gateway defaults or key resolution failed")
+	}
+	t.Setenv("AI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe")
+	if _, err := Load(missing(t)); err == nil || !strings.Contains(err.Error(), "provider/model") {
+		t.Fatalf("unqualified gateway model was accepted: %v", err)
+	}
+	t.Setenv("AI_TRANSCRIBE_MODEL", "")
+	// Keep the existing direct Gemini analysis key separate from Gateway.
+	t.Setenv("AI_PROVIDER", "gemini")
+	t.Setenv("AI_TRANSCRIBE_PROVIDER", "vercel")
+	t.Setenv("GEMINI_API_KEY", "gemini-0123456789abcdef")
+	t.Setenv("AI_GATEWAY_API_KEY", "")
+	if _, err := Load(missing(t)); err == nil || !strings.Contains(err.Error(), "AI_GATEWAY_API_KEY") {
+		t.Fatalf("transcription borrowed a direct provider key: %v", err)
+	}
+	keyFile := write(t, "gateway-file-0123456789abcdef\n")
+	t.Setenv("AI_GATEWAY_API_KEY_FILE", keyFile)
+	c, err = Load(missing(t))
+	if err != nil || c.AI.APIKey != "gemini-0123456789abcdef" || c.AI.TranscribeAPIKey != "gateway-file-0123456789abcdef" ||
+		c.AI.TranscribeBaseURL != "https://ai-gateway.vercel.sh/v1" || c.AI.AnalysisModel != "gemini-3.5-flash-lite" {
+		t.Fatalf("separate transcription gateway config failed: %v", err)
+	}
+}
+
 func TestSecretPrecedenceAndValidation(t *testing.T) {
 	baseEnv(t)
 	dir := t.TempDir()
